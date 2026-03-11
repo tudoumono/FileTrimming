@@ -1,0 +1,23 @@
+# ドキュメント処理パイプライン - 依存パッケージ
+
+# --- 設定 ---
+pydantic>=2.0
+pydantic-settings>=2.0
+python-dotenv>=1.0
+
+# --- LLM ---
+openai>=1.0
+tiktoken>=0.5
+
+# --- ドキュメント変換 ---
+markitdown>=0.1
+openpyxl>=3.1
+python-docx>=1.0
+PyMuPDF>=1.23           # fitz
+
+# --- Windows COM（Windows環境のみ） ---
+pywin32>=306            # win32com.client
+xlwings>=0.30
+
+# --- オプション ---
+# pandoc は別途インストール: https://pandoc.org/installing.html
