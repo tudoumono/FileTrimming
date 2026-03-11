@@ -1,15 +1,15 @@
 # .docx 取り扱いメモ
 
 作成日: 260311 203032
-更新日: 260311 211420
+更新日: 260311 214114
 
 ## 1. 結論
 
-- `.docx` は一律に Markdown 化せず、`文章型` と `構造保持型` を分けて扱う
-- `文章型` は MarkItDown を第一候補として Markdown 化する
-- `構造保持型` は `Word COM + OOXML 抽出` を使い、表・図形・フォーム部品・位置関係を中間JSONへ保持する
-- `構造保持型` の抽出仕様は `paragraph / heading / table / cell / rowspan / colspan / shape / inline_shape / content_control / anchor / page_hint / bbox_hint` を基本単位とする
-- Excel の `xlwings` に相当する Word 専用の定番ラッパは前提にせず、Word は `pywin32` による COM 直操作を主軸にする
+- 現行実装の正本は [詳細設計書 v2](../ドキュメント処理パイプライン詳細設計書_v2.md) とし、このメモでは Word 固有の論点と将来拡張候補を整理する
+- 現行本流の `.docx` は Phase 4 の MarkItDown 変換で処理する
+- 表、図形、フォーム部品、位置関係の保持が重要な文書では、将来拡張候補として `Word COM + OOXML 抽出` を検討する
+- 将来拡張候補の抽出仕様は `paragraph / heading / table / cell / rowspan / colspan / shape / inline_shape / content_control / anchor / page_hint / bbox_hint` を基本単位とする
+- Excel の `xlwings` に相当する Word 専用の定番ラッパは前提にせず、Word は `pywin32` による COM 直操作を主軸候補とする
 
 ## 2. やり取り履歴
 
@@ -17,6 +17,7 @@
 - `260311 203032`: 拡張子別メモへ分離し、`.docx` を Word 系の基準文書とした
 - `260311 203256`: 結論先行と履歴保持の形式へ更新した
 - `260311 211420`: 構造保持が必要な Word は MarkItDown 単独ではなく、Word COM と OOXML 抽出を併用する方針を追記した
+- `260311 214114`: 現行本流は MarkItDown、構造保持抽出は将来拡張候補という役割分担へ表現を整理した
 
 
 ## 3. 結論図
@@ -24,20 +25,18 @@
 ```mermaid
 flowchart LR
     A[".docx 入力"] --> B["Phase 1: word 分類"]
-    B --> C{"文章型か / 構造保持型か"}
-    C -->|文章型| D["Phase 3: Heading 単位で分割"]
-    D --> E["Phase 4: MarkItDown"]
-    E --> F["Markdown 本文と表"]
-    C -->|構造保持型| G["Word COM + OOXML 抽出"]
-    G --> H["中間JSON"]
-    H --> I["Markdown / HTML / 再構成"]
-    F --> J["Phase 5: 品質評価"]
-    I --> J
+    B --> C["Phase 3: トークン推定"]
+    C --> D["Phase 4: MarkItDown (現行本流)"]
+    D --> E["Phase 5: 品質評価"]
+    C -. 将来拡張候補 .-> F["Word COM + OOXML 抽出"]
+    F --> G["中間JSON / HTML / 再構成"]
+    G --> E
 ```
 
 ## 4. 再確認しやすい論点
 
 - `文章型` と `構造保持型` をどの条件で自動判定するか
+- 現行の MarkItDown ルートだけで、見出し・表中心の Word 文書をどこまで十分に扱えるか
 - Word で `Shapes` / `InlineShapes` / `ContentControls` / `Tables` をどこまで網羅的に取得できるか
 - 位置情報は絶対座標だけでなく、アンカー段落やページ情報を併用すべきか
 - テキストボックスや図形、複雑な表をどこまで維持できるか
@@ -48,6 +47,7 @@ flowchart LR
 
 - Heading 構造が Markdown 見出しへ正しく落ちるか
 - 表が行列構造を保っているか
+- 現行の MarkItDown ルートで仕様理解に必要な情報が欠けていないか
 - 結合セルの `rowspan` / `colspan` を中間表現へ保持できるか
 - テキストボックス、図形、画像、埋め込みオブジェクトを `shape` / `inline_shape` として追跡できるか
 - 入力フォームや帳票で、ラベルと値の対応関係を再構成できるか

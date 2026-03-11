@@ -1,15 +1,14 @@
 # .rtf 取り扱いメモ
 
 作成日: 260311 202103
-更新日: 260311 211420
+更新日: 260311 214114
 
 ## 1. 結論
 
-- `.rtf` は一律に Word 文書として扱わず、`文章型` と `フォーム型` を分けて扱う
-- `文章型` は `Word COM で .docx 化 -> MarkItDown` を継続する
-- `フォーム型` は `Word COM で .docx 化 -> レイアウト保持抽出` とし、結合セルを Markdown テーブルへ潰さず HTML テーブルで保持する
-- `Word COM で .docx 化` した後の抽出仕様は、原則として [`.docx 取り扱いメモ`](docx.md) と共通にする
-- ただし `.rtf` は正規化起点のため、`source_type=rtf`、`normalized_from_rtf=true`、`fidelity_warnings`、`requires_visual_review` などのメタデータを残す
+- 現行実装の正本は [詳細設計書 v2](../ドキュメント処理パイプライン詳細設計書_v2.md) とし、このメモでは RTF 固有の論点と将来拡張候補を整理する
+- 現行本流の `.rtf` は `Word COM で .docx 化 -> MarkItDown` で処理し、正規化失敗時のみフォールバック変換を使う
+- `.rtf` は正規化起点のため、`source_type=rtf`、`normalized_from_rtf=true`、`fidelity_warnings`、`requires_visual_review` などのメタデータを残す方針を維持する
+- フォーム型文書に対するレイアウト保持抽出と HTML テーブル保持は将来拡張候補とし、抽出仕様は原則として [`.docx 取り扱いメモ`](docx.md) と共通化する
 - 標準 RTF 相当であることは、実ファイル先頭と Word での開封確認を前提とする
 - ただし最終結論ではなく、実データで変換品質を見てから継続判断する
 
@@ -21,6 +20,7 @@
 - `260311 203256`: 結論先行、Mermaid 図、履歴保持の形式へ更新した
 - `260311 205500`: セル結合の多い入力フォーム系 RTF は Markdown テーブル化せず、HTML テーブルで保持する方針を追記した
 - `260311 211420`: `.rtf` は `.docx` と抽出仕様を共通化しつつ、正規化起点であることを示すメタデータを残す方針を追記した
+- `260311 214114`: 現行本流は MarkItDown、レイアウト保持抽出は将来拡張候補という位置づけに整理した
 
 
 ## 3. 結論図
@@ -28,21 +28,20 @@
 ```mermaid
 flowchart LR
     A[".rtf 入力"] --> B["先頭ヘッダ確認"]
-    B --> C["Phase 2: Word COM で .docx 化"]
-    C --> D{"文章型か / フォーム型か"}
-    D -->|文章型| E["MarkItDown"]
-    D -->|フォーム型| F["レイアウト保持抽出"]
-    F --> G[".docx 共通抽出仕様"]
-    E --> H[".docx 共通抽出仕様"]
-    G --> I["HTML table + rowspan/colspan / 中間JSON"]
-    H --> I
-    I --> J["品質判定"]
-    J --> K["必要なら追加補正"]
+    B --> C{"Phase 2 で .docx 化成功?"}
+    C -->|Yes| D["Phase 4: word -> MarkItDown"]
+    C -->|No| E["Phase 4: pandoc / MarkItDown / テキスト読み込み"]
+    D --> F["品質判定 + requires_visual_review"]
+    E --> F
+    C -. 将来拡張候補 .-> G["レイアウト保持抽出"]
+    G --> H["HTML table + rowspan/colspan / 中間JSON"]
+    H --> F
 ```
 
 ## 4. 再確認しやすい論点
 
 - RTF から `.docx` へ保存した時点で複雑な表や図形が欠落しないか
+- 現行の `Word COM で .docx 化 -> MarkItDown` だけで、実運用に必要な精度が足りるか
 - `.docx` 共通仕様へ寄せた時に、RTF 起点だけ精度が落ちる項目は何か
 - `.rtf` と `.docx` で同じ中間JSONを使いつつ、信頼度や要確認フラグをどう持つか
 - セル結合の多いフォームを Markdown テーブルにしてよいのか、それとも HTML テーブルや JSON 構造で保持すべきか
@@ -53,6 +52,7 @@ flowchart LR
 ## 5. 試験時の確認項目
 
 - 本文、見出し、表、箇条書きの順序が崩れていないか
+- 正規化失敗時のフォールバックでも最低限の本文抽出ができるか
 - 結合セルの `rowspan` / `colspan` が追跡できるか
 - `source_type=rtf` や `fidelity_warnings` が後続工程へ渡っているか
 - 図、フロー図、埋め込みオブジェクトが欠落していないか
