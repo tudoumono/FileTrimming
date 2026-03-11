@@ -2,14 +2,29 @@
 config.py - .env から設定を読み込み、型付きで提供する
 """
 
-from pathlib import Path
-from dataclasses import dataclass, field
-from dotenv import load_dotenv
-import os
+from __future__ import annotations
 
-# .env を読み込む（プロジェクトルート基準）
+import os
+from dataclasses import dataclass, field
+from pathlib import Path
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(*_args, **_kwargs) -> bool:
+        return False
+
+
 _PROJECT_ROOT = Path(__file__).parent
-load_dotenv(_PROJECT_ROOT / ".env")
+
+
+def _load_env_file(env_file: str | Path | None = None) -> None:
+    env_path = Path(env_file) if env_file else _PROJECT_ROOT / ".env"
+    if env_path.exists():
+        load_dotenv(env_path, override=True)
+
+
+_load_env_file()
 
 
 def _env(key: str, default: str = "") -> str:
@@ -63,12 +78,13 @@ class ExecutionConfig:
     start_step: int = field(default_factory=lambda: _env_int("START_STEP", 1))
     file_conflict_mode: str = field(default_factory=lambda: _env("FILE_CONFLICT_MODE", "skip"))
     log_level: str = field(default_factory=lambda: _env("LOG_LEVEL", "INFO"))
+    log_file: Path = field(default_factory=lambda: Path(_env("LOG_FILE", "./work/logs/pipeline.log")))
 
 
 @dataclass(frozen=True)
 class EncodingConfig:
     default: str = field(default_factory=lambda: _env("DEFAULT_ENCODING", "shift_jis"))
-    fallbacks: list = field(default_factory=lambda: _env("FALLBACK_ENCODINGS", "utf-8,shift_jis,cp932,euc-jp").split(","))
+    fallbacks: list[str] = field(default_factory=lambda: _env("FALLBACK_ENCODINGS", "utf-8,shift_jis,cp932,euc-jp").split(","))
 
 
 @dataclass(frozen=True)
@@ -80,6 +96,8 @@ class AppConfig:
     encoding: EncodingConfig = field(default_factory=EncodingConfig)
 
 
-def load_config() -> AppConfig:
+def load_config(env_file: str | Path | None = None) -> AppConfig:
     """設定を読み込んで AppConfig を返す"""
+    if env_file is not None:
+        _load_env_file(env_file)
     return AppConfig()

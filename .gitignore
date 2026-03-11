@@ -12,5 +12,9 @@ env/
 .mypy_cache/
 .ruff_cache/
 
+work/
+output/
+_zip_extract/
+
 .DS_Store
 Thumbs.db
