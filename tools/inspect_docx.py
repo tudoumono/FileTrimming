@@ -1,0 +1,847 @@
+"""docx 詳細調査スクリプト
+
+.docx ファイルの内部構造を詳細に調査し、パイプライン設計に必要な
+情報を抽出する。profile_documents.py より深い情報を取る。
+
+調査項目:
+  1. フォントパターン: 段落ごとのフォントサイズ・太字・スタイル名 → 疑似見出し検出の材料
+  2. 表の詳細構造: 結合セル位置、列見出し/行見出し、入れ子表、親子行パターン
+  3. 図形の詳細: 浮動図形のテキスト・座標・接続関係、テキストボックス
+  4. 段落と表/図形の出現順序: 文書内の要素配置パターン
+
+使い方:
+  # 単一ファイルを調査
+  python tools/inspect_docx.py <file.docx> -o inspect_report
+
+  # フォルダ配下の全 .docx を調査
+  python tools/inspect_docx.py <folder> -o inspect_report
+
+出力:
+  inspect_report.json  — 詳細データ
+  inspect_report.txt   — 口頭説明用テキスト
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from collections import Counter
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+
+try:
+    from docx import Document
+    from docx.oxml.ns import qn
+except ImportError:
+    print("エラー: python-docx がインストールされていません (pip install python-docx)", file=sys.stderr)
+    sys.exit(1)
+
+try:
+    from lxml import etree
+
+    HAS_LXML = True
+except ImportError:
+    HAS_LXML = False
+
+
+# ---------------------------------------------------------------------------
+# データクラス
+# ---------------------------------------------------------------------------
+@dataclass
+class ParagraphInfo:
+    index: int
+    text_preview: str  # 先頭50字
+    char_count: int
+    style_name: str
+    font_size_pt: float | None
+    is_bold: bool
+    font_name: str | None
+    is_all_caps: bool
+    outline_level: int | None  # Word の outlineLevel（見出しレベルの別手段）
+
+
+@dataclass
+class CellDetail:
+    row: int
+    col: int
+    text_preview: str
+    is_merged_horizontally: bool
+    is_merged_vertically: bool
+    grid_span: int  # 横方向の結合数
+
+
+@dataclass
+class TableDetail:
+    table_index: int
+    rows: int
+    cols: int
+    has_merged_cells: bool
+    merged_cell_count: int
+    first_row_texts: list[str]  # 1行目のテキスト（列見出しの推定）
+    first_col_texts: list[str]  # 1列目のテキスト（行見出しの推定）
+    has_nested_table: bool
+    max_cell_text_length: int
+    sample_cells: list[dict]  # 結合セルなど注目すべきセルのサンプル
+
+
+@dataclass
+class ShapeDetail:
+    shape_type: str  # "floating" / "inline" / "textbox" / "group"
+    text: str | None
+    width: float | None  # EMU → cm
+    height: float | None
+    left: float | None  # アンカー位置
+    top: float | None
+    has_text_content: bool
+    child_count: int  # グループ内の子要素数
+
+
+@dataclass
+class ElementOrder:
+    """文書内の要素出現順序を記録する。"""
+
+    index: int
+    element_type: str  # "paragraph" / "table" / "shape"
+    preview: str  # 内容のプレビュー
+    is_pseudo_heading: bool  # フォントパターンから疑似見出しと判定されたか
+
+
+@dataclass
+class DocxInspection:
+    path: str
+    error: str | None = None
+
+    # フォントパターン
+    paragraphs: list[dict] = field(default_factory=list)
+    font_size_distribution: dict[str, int] = field(default_factory=dict)
+    bold_paragraph_count: int = 0
+    pseudo_heading_candidates: list[dict] = field(default_factory=list)
+
+    # 表の詳細
+    tables: list[dict] = field(default_factory=list)
+    total_merged_cells: int = 0
+    nested_table_count: int = 0
+
+    # 図形の詳細
+    shapes: list[dict] = field(default_factory=list)
+    shapes_with_text: int = 0
+
+    # 要素の出現順序
+    element_order: list[dict] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# フォントサイズ取得ヘルパー
+# ---------------------------------------------------------------------------
+def get_font_size_pt(para) -> float | None:
+    """段落のフォントサイズを pt で取得する。"""
+    # 段落スタイルのフォントサイズ
+    if para.style and para.style.font and para.style.font.size:
+        return para.style.font.size.pt
+
+    # Run レベルのフォントサイズ（最初の Run を参照）
+    for run in para.runs:
+        if run.font.size:
+            return run.font.size.pt
+
+    # XML から直接取得
+    rpr = para._element.find(qn("w:pPr"))
+    if rpr is not None:
+        rfonts = rpr.find(qn("w:rPr"))
+        if rfonts is not None:
+            sz = rfonts.find(qn("w:sz"))
+            if sz is not None:
+                val = sz.get(qn("w:val"))
+                if val:
+                    return int(val) / 2  # half-points → points
+
+    return None
+
+
+def get_is_bold(para) -> bool:
+    """段落が太字かどうかを判定する。"""
+    # Run レベルで判定（全 Run が太字なら太字とみなす）
+    if not para.runs:
+        return False
+    return all(run.bold for run in para.runs if run.text.strip())
+
+
+def get_font_name(para) -> str | None:
+    """段落のフォント名を取得する。"""
+    for run in para.runs:
+        if run.font.name:
+            return run.font.name
+    return None
+
+
+def get_is_all_caps(para) -> bool:
+    """段落が全角大文字（all caps）かどうか。"""
+    for run in para.runs:
+        if run.font.all_caps:
+            return True
+    return False
+
+
+def get_outline_level(para) -> int | None:
+    """段落の outlineLevel を取得する（見出しスタイルとは別の見出し判定手段）。"""
+    ppr = para._element.find(qn("w:pPr"))
+    if ppr is not None:
+        outline = ppr.find(qn("w:outlineLvl"))
+        if outline is not None:
+            val = outline.get(qn("w:val"))
+            if val is not None:
+                return int(val)
+    return None
+
+
+# ---------------------------------------------------------------------------
+# 表の詳細調査
+# ---------------------------------------------------------------------------
+def inspect_table(tbl, table_index: int) -> TableDetail:
+    rows = len(tbl.rows)
+    cols = len(tbl.columns)
+
+    merged_cell_count = 0
+    has_nested = False
+    max_cell_text = 0
+    sample_cells: list[dict] = []
+
+    for r_idx, row in enumerate(tbl.rows):
+        for c_idx, cell in enumerate(row.cells):
+            text = cell.text.strip()
+            max_cell_text = max(max_cell_text, len(text))
+
+            # 結合セル検出
+            tc = cell._tc
+            grid_span = 1
+            gs = tc.find(qn("w:tcPr"))
+            is_h_merged = False
+            is_v_merged = False
+
+            if gs is not None:
+                span_elem = gs.find(qn("w:gridSpan"))
+                if span_elem is not None:
+                    val = span_elem.get(qn("w:val"))
+                    if val and int(val) > 1:
+                        grid_span = int(val)
+                        is_h_merged = True
+
+                vmerge = gs.find(qn("w:vMerge"))
+                if vmerge is not None:
+                    is_v_merged = True
+
+            if is_h_merged or is_v_merged:
+                merged_cell_count += 1
+                if len(sample_cells) < 10:
+                    sample_cells.append(
+                        asdict(
+                            CellDetail(
+                                row=r_idx,
+                                col=c_idx,
+                                text_preview=text[:50],
+                                is_merged_horizontally=is_h_merged,
+                                is_merged_vertically=is_v_merged,
+                                grid_span=grid_span,
+                            )
+                        )
+                    )
+
+            # 入れ子表検出
+            nested = tc.findall(qn("w:tbl"))
+            if nested:
+                has_nested = True
+
+    # 1行目・1列目のテキスト（見出し推定用）
+    first_row_texts = []
+    if rows > 0:
+        for cell in tbl.rows[0].cells:
+            first_row_texts.append(cell.text.strip()[:30])
+
+    first_col_texts = []
+    for row in tbl.rows[:10]:  # 先頭10行分
+        if row.cells:
+            first_col_texts.append(row.cells[0].text.strip()[:30])
+
+    actual_cells = sum(1 for row in tbl.rows for _ in row.cells)
+    grid_cells = rows * cols
+    has_merged = actual_cells != grid_cells or merged_cell_count > 0
+
+    return TableDetail(
+        table_index=table_index,
+        rows=rows,
+        cols=cols,
+        has_merged_cells=has_merged,
+        merged_cell_count=merged_cell_count,
+        first_row_texts=first_row_texts,
+        first_col_texts=first_col_texts,
+        has_nested_table=has_nested,
+        max_cell_text_length=max_cell_text,
+        sample_cells=sample_cells,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 図形の詳細調査
+# ---------------------------------------------------------------------------
+def inspect_shapes(doc) -> list[ShapeDetail]:
+    shapes: list[ShapeDetail] = []
+
+    # InlineShape
+    for ishape in doc.inline_shapes:
+        shapes.append(
+            ShapeDetail(
+                shape_type="inline",
+                text=None,
+                width=ishape.width / 914400 if ishape.width else None,  # EMU → cm (approx)
+                height=ishape.height / 914400 if ishape.height else None,
+                left=None,
+                top=None,
+                has_text_content=False,
+                child_count=0,
+            )
+        )
+
+    if not HAS_LXML:
+        return shapes
+
+    # 浮動図形を XML から取得
+    body = doc.element.body
+    ns = {
+        "w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main",
+        "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
+        "wps": "http://schemas.microsoft.com/office/word/2010/wordprocessingShape",
+        "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+        "v": "urn:schemas-microsoft-com:vml",
+        "mc": "http://schemas.openxmlformats.org/markup-compatibility/2006",
+        "wpg": "http://schemas.microsoft.com/office/word/2010/wordprocessingGroup",
+    }
+
+    # wps:wsp (WordprocessingShape)
+    for wsp in body.findall(".//wps:wsp", ns):
+        text_parts = []
+        for txbx in wsp.findall(".//wps:txbx//w:p", ns):
+            t = "".join(node.text or "" for node in txbx.findall(".//w:t", ns))
+            if t.strip():
+                text_parts.append(t.strip())
+
+        text = "\n".join(text_parts) if text_parts else None
+        shapes.append(
+            ShapeDetail(
+                shape_type="floating",
+                text=text[:200] if text else None,
+                width=None,
+                height=None,
+                left=None,
+                top=None,
+                has_text_content=bool(text),
+                child_count=0,
+            )
+        )
+
+    # VML shapes (v:shape)
+    for vshape in body.findall(".//v:shape", ns):
+        text_parts = []
+        for textbox in vshape.findall(".//v:textbox//w:p", ns):
+            t = "".join(node.text or "" for node in textbox.findall(".//w:t", ns))
+            if t.strip():
+                text_parts.append(t.strip())
+
+        text = "\n".join(text_parts) if text_parts else None
+        style = vshape.get("style", "")
+
+        # style から幅・高さを抽出
+        width = None
+        height = None
+        for part in style.split(";"):
+            part = part.strip()
+            if part.startswith("width:"):
+                try:
+                    width = float(part.replace("width:", "").replace("pt", "").strip()) / 72 * 2.54
+                except ValueError:
+                    pass
+            elif part.startswith("height:"):
+                try:
+                    height = float(part.replace("height:", "").replace("pt", "").strip()) / 72 * 2.54
+                except ValueError:
+                    pass
+
+        shapes.append(
+            ShapeDetail(
+                shape_type="vml",
+                text=text[:200] if text else None,
+                width=width,
+                height=height,
+                left=None,
+                top=None,
+                has_text_content=bool(text),
+                child_count=0,
+            )
+        )
+
+    # グループ図形 (wpg:wgp)
+    for wgp in body.findall(".//wpg:wgp", ns):
+        child_shapes = wgp.findall(".//wps:wsp", ns)
+        text_parts = []
+        for child in child_shapes:
+            for txbx in child.findall(".//wps:txbx//w:p", ns):
+                t = "".join(node.text or "" for node in txbx.findall(".//w:t", ns))
+                if t.strip():
+                    text_parts.append(t.strip())
+
+        text = "\n".join(text_parts) if text_parts else None
+        shapes.append(
+            ShapeDetail(
+                shape_type="group",
+                text=text[:200] if text else None,
+                width=None,
+                height=None,
+                left=None,
+                top=None,
+                has_text_content=bool(text),
+                child_count=len(child_shapes),
+            )
+        )
+
+    return shapes
+
+
+# ---------------------------------------------------------------------------
+# 疑似見出し候補の判定
+# ---------------------------------------------------------------------------
+def detect_pseudo_headings(paragraphs: list[ParagraphInfo]) -> list[ParagraphInfo]:
+    """フォントパターンから疑似見出し候補を検出する。"""
+    if not paragraphs:
+        return []
+
+    # 本文のフォントサイズを推定（最頻値）
+    sizes = [p.font_size_pt for p in paragraphs if p.font_size_pt and p.char_count > 0]
+    if not sizes:
+        # サイズが取れない場合は太字のみで判定
+        return [
+            p
+            for p in paragraphs
+            if p.is_bold and 0 < p.char_count <= 100
+        ]
+
+    size_counter = Counter(sizes)
+    body_size = size_counter.most_common(1)[0][0] if size_counter else 0
+
+    candidates = []
+    for p in paragraphs:
+        if p.char_count == 0:
+            continue
+
+        is_candidate = False
+        # フォントサイズが本文より大きい
+        if p.font_size_pt and p.font_size_pt > body_size:
+            is_candidate = True
+        # 太字で短い段落
+        elif p.is_bold and p.char_count <= 100:
+            is_candidate = True
+        # outlineLevel が設定されている
+        elif p.outline_level is not None:
+            is_candidate = True
+
+        if is_candidate:
+            candidates.append(p)
+
+    return candidates
+
+
+# ---------------------------------------------------------------------------
+# 要素の出現順序を取得
+# ---------------------------------------------------------------------------
+def get_element_order(doc, pseudo_headings: list[ParagraphInfo]) -> list[ElementOrder]:
+    """段落・表・図形の出現順序を記録する。"""
+    pseudo_heading_indices = {p.index for p in pseudo_headings}
+    elements: list[ElementOrder] = []
+    idx = 0
+
+    body = doc.element.body
+    for child in body:
+        tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+
+        if tag == "p":
+            text = child.text or ""
+            # w:t からテキストを集める
+            ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+            text_nodes = child.findall(".//w:t", ns)
+            text = "".join(t.text or "" for t in text_nodes)
+
+            elements.append(
+                ElementOrder(
+                    index=idx,
+                    element_type="paragraph",
+                    preview=text[:50] if text else "(空段落)",
+                    is_pseudo_heading=idx in pseudo_heading_indices,
+                )
+            )
+        elif tag == "tbl":
+            # 表の最初のセルのテキストをプレビュー
+            ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+            first_texts = []
+            for tc in child.findall(".//w:tc", ns)[:3]:
+                t_nodes = tc.findall(".//w:t", ns)
+                t = "".join(n.text or "" for n in t_nodes)
+                if t.strip():
+                    first_texts.append(t.strip()[:20])
+            preview = " | ".join(first_texts) if first_texts else "(空表)"
+            elements.append(
+                ElementOrder(
+                    index=idx,
+                    element_type="table",
+                    preview=preview,
+                    is_pseudo_heading=False,
+                )
+            )
+        else:
+            continue
+
+        idx += 1
+
+    return elements
+
+
+# ---------------------------------------------------------------------------
+# 1ファイルの調査
+# ---------------------------------------------------------------------------
+def inspect_file(filepath: Path) -> DocxInspection:
+    rel_path = str(filepath)
+    inspection = DocxInspection(path=rel_path)
+
+    try:
+        doc = Document(str(filepath))
+    except Exception as e:
+        inspection.error = f"読み込み失敗: {e}"
+        return inspection
+
+    # --- 段落のフォントパターン ---
+    para_infos: list[ParagraphInfo] = []
+    font_sizes: list[str] = []
+
+    for i, para in enumerate(doc.paragraphs):
+        text = para.text.strip()
+        font_size = get_font_size_pt(para)
+        is_bold = get_is_bold(para)
+        font_name = get_font_name(para)
+        is_all_caps = get_is_all_caps(para)
+        outline_level = get_outline_level(para)
+        style_name = para.style.name if para.style else ""
+
+        info = ParagraphInfo(
+            index=i,
+            text_preview=text[:50] if text else "",
+            char_count=len(text),
+            style_name=style_name,
+            font_size_pt=font_size,
+            is_bold=is_bold,
+            font_name=font_name,
+            is_all_caps=is_all_caps,
+            outline_level=outline_level,
+        )
+        para_infos.append(info)
+
+        if font_size:
+            font_sizes.append(f"{font_size}pt")
+
+    inspection.paragraphs = [asdict(p) for p in para_infos]
+    inspection.font_size_distribution = dict(Counter(font_sizes).most_common())
+    inspection.bold_paragraph_count = sum(1 for p in para_infos if p.is_bold)
+
+    # 疑似見出し検出
+    pseudo_headings = detect_pseudo_headings(para_infos)
+    inspection.pseudo_heading_candidates = [asdict(p) for p in pseudo_headings]
+
+    # --- 表の詳細 ---
+    for t_idx, tbl in enumerate(doc.tables):
+        detail = inspect_table(tbl, t_idx)
+        inspection.tables.append(asdict(detail))
+        inspection.total_merged_cells += detail.merged_cell_count
+        if detail.has_nested_table:
+            inspection.nested_table_count += 1
+
+    # --- 図形の詳細 ---
+    shape_details = inspect_shapes(doc)
+    inspection.shapes = [asdict(s) for s in shape_details]
+    inspection.shapes_with_text = sum(1 for s in shape_details if s.has_text_content)
+
+    # --- 要素の出現順序 ---
+    order = get_element_order(doc, pseudo_headings)
+    inspection.element_order = [asdict(e) for e in order]
+
+    return inspection
+
+
+# ---------------------------------------------------------------------------
+# テキストレポート生成
+# ---------------------------------------------------------------------------
+def format_size(size_bytes: int) -> str:
+    if size_bytes >= 1024 * 1024:
+        return f"{size_bytes / 1024 / 1024:.1f}MB"
+    elif size_bytes >= 1024:
+        return f"{size_bytes / 1024:.0f}KB"
+    return f"{size_bytes}バイト"
+
+
+def build_text_report(inspections: list[DocxInspection]) -> str:
+    lines: list[str] = []
+    lines.append("=" * 60)
+    lines.append("docx 詳細調査レポート")
+    lines.append("=" * 60)
+    lines.append("")
+    lines.append(f"調査対象: {len(inspections)}ファイル")
+    errors = [i for i in inspections if i.error]
+    if errors:
+        lines.append(f"エラー: {len(errors)}件")
+    lines.append("")
+
+    ok_files = [i for i in inspections if not i.error]
+    if not ok_files:
+        lines.append("調査可能なファイルがありません。")
+        return "\n".join(lines)
+
+    # --- フォントパターン集計 ---
+    lines.append("■ フォントパターン分析")
+    lines.append("")
+
+    # 全ファイルのフォントサイズ分布を集約
+    all_sizes: Counter = Counter()
+    for insp in ok_files:
+        for size_str, count in insp.font_size_distribution.items():
+            all_sizes[size_str] += count
+
+    if all_sizes:
+        lines.append("  フォントサイズの分布（全ファイル合算）:")
+        for size_str, count in all_sizes.most_common():
+            lines.append(f"    {size_str}: {count}段落")
+        body_size = all_sizes.most_common(1)[0][0]
+        lines.append(f"  → 本文の推定フォントサイズ: {body_size}（最頻値）")
+    else:
+        lines.append("  フォントサイズ: 取得できず（スタイル経由の可能性）")
+    lines.append("")
+
+    # 太字段落
+    total_bold = sum(i.bold_paragraph_count for i in ok_files)
+    total_paras = sum(len(i.paragraphs) for i in ok_files)
+    lines.append(f"  太字の段落: {total_bold}個 / {total_paras}段落中")
+    lines.append("")
+
+    # 疑似見出し候補
+    total_pseudo = sum(len(i.pseudo_heading_candidates) for i in ok_files)
+    files_with_pseudo = sum(1 for i in ok_files if i.pseudo_heading_candidates)
+    lines.append(f"  疑似見出し候補: 合計{total_pseudo}個（{files_with_pseudo}ファイルで検出）")
+    if total_pseudo > 0:
+        # 疑似見出しのテキストパターンを集約
+        pseudo_texts: Counter = Counter()
+        for insp in ok_files:
+            for ph in insp.pseudo_heading_candidates:
+                text = ph.get("text_preview", "")
+                if text:
+                    pseudo_texts[text] += 1
+        lines.append("  疑似見出しとして検出されたテキスト（出現頻度順）:")
+        for text, count in pseudo_texts.most_common(20):
+            lines.append(f"    「{text}」: {count}件")
+    lines.append("")
+
+    # outlineLevel
+    has_outline = 0
+    for insp in ok_files:
+        for p in insp.paragraphs:
+            if p.get("outline_level") is not None:
+                has_outline += 1
+    if has_outline > 0:
+        lines.append(f"  outlineLevel が設定された段落: {has_outline}個")
+        lines.append("  → Word の見出しスタイルは未使用だが outlineLevel で構造化されている可能性あり")
+    else:
+        lines.append("  outlineLevel: 設定なし（見出し構造は完全にフォント依存）")
+    lines.append("")
+
+    # --- 表の詳細集計 ---
+    lines.append("■ 表の詳細分析")
+    lines.append("")
+
+    all_tables = []
+    for insp in ok_files:
+        for t in insp.tables:
+            t["_file"] = insp.path
+            all_tables.append(t)
+
+    lines.append(f"  表の総数: {len(all_tables)}個")
+
+    # 結合セル
+    tables_with_merge = [t for t in all_tables if t["has_merged_cells"]]
+    total_merged = sum(t["merged_cell_count"] for t in all_tables)
+    lines.append(f"  結合セルを含む表: {len(tables_with_merge)}個（結合セル合計{total_merged}個）")
+
+    if tables_with_merge:
+        lines.append("  結合セルの詳細（サンプル）:")
+        shown = 0
+        for t in tables_with_merge:
+            if shown >= 5:
+                lines.append(f"    ... 他{len(tables_with_merge) - 5}個")
+                break
+            lines.append(f"    - {t['_file']} / 表{t['table_index']}: {t['rows']}行×{t['cols']}列、結合{t['merged_cell_count']}箇所")
+            for sc in t.get("sample_cells", [])[:3]:
+                merge_type = []
+                if sc.get("is_merged_horizontally"):
+                    merge_type.append(f"横{sc['grid_span']}セル結合")
+                if sc.get("is_merged_vertically"):
+                    merge_type.append("縦結合")
+                lines.append(f"      ({sc['row']},{sc['col']}): {', '.join(merge_type)} 「{sc['text_preview']}」")
+            shown += 1
+    lines.append("")
+
+    # 入れ子表
+    nested = [t for t in all_tables if t["has_nested_table"]]
+    lines.append(f"  入れ子表（表の中に表）: {len(nested)}個")
+    if nested:
+        for t in nested[:3]:
+            lines.append(f"    - {t['_file']} / 表{t['table_index']}")
+    lines.append("")
+
+    # 列見出しパターン
+    first_row_patterns: Counter = Counter()
+    for t in all_tables:
+        if t["first_row_texts"]:
+            key = " | ".join(t["first_row_texts"][:5])
+            first_row_patterns[key] += 1
+
+    if first_row_patterns:
+        lines.append("  表の1行目パターン（列見出しの推定、出現頻度順）:")
+        for pattern, count in first_row_patterns.most_common(10):
+            lines.append(f"    [{count}回] {pattern}")
+    lines.append("")
+
+    # 大きなセル
+    large_cell_tables = [t for t in all_tables if t["max_cell_text_length"] >= 100]
+    if large_cell_tables:
+        lines.append(f"  100字以上のセルを含む表: {len(large_cell_tables)}個")
+        lines.append("  → セル内に長文があり、チャンキング時の考慮が必要")
+    lines.append("")
+
+    # --- 図形の詳細集計 ---
+    lines.append("■ 図形の詳細分析")
+    lines.append("")
+
+    all_shapes = []
+    for insp in ok_files:
+        for s in insp.shapes:
+            s["_file"] = insp.path
+            all_shapes.append(s)
+
+    if not all_shapes:
+        lines.append("  図形: なし")
+    else:
+        shape_types: Counter = Counter()
+        for s in all_shapes:
+            shape_types[s["shape_type"]] += 1
+
+        lines.append(f"  図形の総数: {len(all_shapes)}個")
+        for st, count in shape_types.most_common():
+            lines.append(f"    {st}: {count}個")
+
+        shapes_with_text = [s for s in all_shapes if s["has_text_content"]]
+        lines.append(f"  テキストを含む図形: {len(shapes_with_text)}個")
+
+        if shapes_with_text:
+            lines.append("  図形内テキストのサンプル:")
+            for s in shapes_with_text[:10]:
+                text = s.get("text", "")
+                if text:
+                    lines.append(f"    [{s['shape_type']}] 「{text[:60]}」")
+
+        groups = [s for s in all_shapes if s["shape_type"] == "group"]
+        if groups:
+            child_counts = [s["child_count"] for s in groups]
+            lines.append(f"  グループ図形: {len(groups)}個（子要素数: 最小{min(child_counts)}, 最大{max(child_counts)}）")
+            lines.append("  → ワークフロー図やフロー図の可能性が高い")
+    lines.append("")
+
+    # --- 文書構造パターン ---
+    lines.append("■ 文書構造パターン")
+    lines.append("")
+
+    for insp in ok_files:
+        if not insp.element_order:
+            continue
+        # パターン要約
+        type_sequence = [e["element_type"][0].upper() for e in insp.element_order[:30]]  # P/T
+        pseudo_count = sum(1 for e in insp.element_order if e["is_pseudo_heading"])
+        lines.append(f"  {Path(insp.path).name}:")
+        lines.append(f"    要素数: {len(insp.element_order)}、疑似見出し: {pseudo_count}個")
+        lines.append(f"    先頭30要素: {''.join(type_sequence)} (P=段落, T=表)")
+
+        # 「段落→表」の繰り返しパターンを検出
+        pt_pattern = 0
+        for j in range(len(insp.element_order) - 1):
+            if (
+                insp.element_order[j]["element_type"] == "paragraph"
+                and insp.element_order[j + 1]["element_type"] == "table"
+            ):
+                pt_pattern += 1
+        if pt_pattern > 0:
+            lines.append(f"    「段落→表」パターン: {pt_pattern}回")
+        lines.append("")
+
+    lines.append("=" * 60)
+    lines.append("以上")
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# メイン
+# ---------------------------------------------------------------------------
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="docx 詳細調査: フォントパターン、表構造、図形、要素順序を調査する"
+    )
+    parser.add_argument("target", help=".docx ファイルまたはフォルダ")
+    parser.add_argument(
+        "--output", "-o", default="inspect_report",
+        help="出力ファイル名（拡張子なし）。.json と .txt を出力 (デフォルト: inspect_report)",
+    )
+    args = parser.parse_args()
+
+    target = Path(args.target)
+    if target.is_file() and target.suffix.lower() == ".docx":
+        docx_files = [target]
+    elif target.is_dir():
+        docx_files = sorted(target.rglob("*.docx"))
+    else:
+        print(f"エラー: {target} は .docx ファイルでもフォルダでもありません", file=sys.stderr)
+        sys.exit(1)
+
+    if not docx_files:
+        print("対象の .docx ファイルが見つかりません", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"調査開始: {len(docx_files)}ファイル")
+
+    inspections: list[DocxInspection] = []
+    for i, fpath in enumerate(docx_files, 1):
+        print(f"  [{i}/{len(docx_files)}] {fpath.name}")
+        insp = inspect_file(fpath)
+        inspections.append(insp)
+
+    print("調査完了")
+
+    # JSON 出力
+    json_path = Path(f"{args.output}.json")
+    data = [asdict(insp) for insp in inspections]
+    json_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"JSON レポート出力: {json_path}")
+
+    # テキストレポート出力
+    text_report = build_text_report(inspections)
+    txt_path = Path(f"{args.output}.txt")
+    txt_path.write_text(text_report, encoding="utf-8")
+    print(f"テキストレポート出力: {txt_path}")
+
+    # コンソール表示
+    print("")
+    print(text_report)
+
+
+if __name__ == "__main__":
+    main()
