@@ -59,6 +59,7 @@ class ParagraphInfo:
     font_name: str | None
     is_all_caps: bool
     outline_level: int | None  # Word の outlineLevel（見出しレベルの別手段）
+    pseudo_heading_reason: str = ""  # 疑似見出し判定理由
 
 
 @dataclass
@@ -130,6 +131,10 @@ class DocxInspection:
     # 要素の出現順序
     element_order: list[dict] = field(default_factory=list)
 
+    # 変更履歴テーブル検出
+    change_history_tables: list[dict] = field(default_factory=list)  # 検出された変更履歴テーブルの情報
+    doc_role_guess: str = "unknown"  # "change_history" / "spec_body" / "mixed" / "unknown"
+
 
 # ---------------------------------------------------------------------------
 # フォントサイズ取得ヘルパー
@@ -161,10 +166,23 @@ def get_font_size_pt(para) -> float | None:
 
 def get_is_bold(para) -> bool:
     """段落が太字かどうかを判定する。"""
-    # Run レベルで判定（全 Run が太字なら太字とみなす）
-    if not para.runs:
+    # 段落レベルの太字設定（pPr/rPr/b）をチェック
+    ppr = para._element.find(qn("w:pPr"))
+    if ppr is not None:
+        rpr = ppr.find(qn("w:rPr"))
+        if rpr is not None:
+            b = rpr.find(qn("w:b"))
+            if b is not None:
+                val = b.get(qn("w:val"))
+                if val is None or val.lower() in ("true", "1", ""):
+                    return True
+
+    # Run レベルで判定（テキストを持つ Run の過半数が太字なら太字とみなす）
+    runs_with_text = [run for run in para.runs if run.text.strip()]
+    if not runs_with_text:
         return False
-    return all(run.bold for run in para.runs if run.text.strip())
+    bold_count = sum(1 for run in runs_with_text if run.bold)
+    return bold_count > len(runs_with_text) / 2
 
 
 def get_font_name(para) -> str | None:
@@ -433,17 +451,27 @@ def detect_pseudo_headings(paragraphs: list[ParagraphInfo]) -> list[ParagraphInf
             continue
 
         is_candidate = False
+        reason = ""
+
         # フォントサイズが本文より大きい
         if p.font_size_pt and p.font_size_pt > body_size:
             is_candidate = True
-        # 太字で短い段落
+            reason = f"フォントサイズ大({p.font_size_pt}pt > 本文{body_size}pt)"
+        # 本文と同じサイズで太字、かつ短い段落
         elif p.is_bold and p.char_count <= 100:
             is_candidate = True
+            reason = f"太字+短文({p.char_count}字)"
+        # 太字でフォントサイズが未取得（スタイル経由等）、かつ短い段落
+        elif p.is_bold and p.font_size_pt is None and p.char_count <= 100:
+            is_candidate = True
+            reason = "太字+サイズ不明+短文"
         # outlineLevel が設定されている
         elif p.outline_level is not None:
             is_candidate = True
+            reason = f"outlineLevel={p.outline_level}"
 
         if is_candidate:
+            p.pseudo_heading_reason = reason
             candidates.append(p)
 
     return candidates
@@ -504,6 +532,46 @@ def get_element_order(doc, pseudo_headings: list[ParagraphInfo]) -> list[Element
 
 
 # ---------------------------------------------------------------------------
+# 変更履歴テーブル検出
+# ---------------------------------------------------------------------------
+# 変更履歴テーブルの1行目に含まれるキーワード群
+CHANGE_HISTORY_KEYWORDS = {"ページ", "種別", "年月", "記事"}
+# 最低何個のキーワードが一致すれば変更履歴とみなすか
+CHANGE_HISTORY_MIN_MATCH = 3
+
+
+def detect_change_history_table(table_detail: dict) -> dict | None:
+    """表の1行目テキストから変更履歴テーブルかどうかを判定する。
+
+    Returns:
+        検出情報の dict、または該当しなければ None。
+    """
+    first_row = table_detail.get("first_row_texts", [])
+    if not first_row:
+        return None
+
+    # 1行目の各セルテキストとキーワードの一致をチェック
+    matched_keywords: list[str] = []
+    for cell_text in first_row:
+        normalized = cell_text.strip()
+        for kw in CHANGE_HISTORY_KEYWORDS:
+            if kw in normalized:
+                matched_keywords.append(kw)
+                break  # 1セルにつき1キーワードまで
+
+    if len(matched_keywords) >= CHANGE_HISTORY_MIN_MATCH:
+        return {
+            "table_index": table_detail["table_index"],
+            "rows": table_detail["rows"],
+            "cols": table_detail["cols"],
+            "first_row_texts": first_row,
+            "matched_keywords": matched_keywords,
+            "match_count": len(matched_keywords),
+        }
+    return None
+
+
+# ---------------------------------------------------------------------------
 # 1ファイルの調査
 # ---------------------------------------------------------------------------
 def inspect_file(filepath: Path) -> DocxInspection:
@@ -560,6 +628,25 @@ def inspect_file(filepath: Path) -> DocxInspection:
         inspection.total_merged_cells += detail.merged_cell_count
         if detail.has_nested_table:
             inspection.nested_table_count += 1
+
+    # --- 変更履歴テーブル検出 ---
+    for t_dict in inspection.tables:
+        ch_info = detect_change_history_table(t_dict)
+        if ch_info:
+            ch_info["_file"] = rel_path
+            inspection.change_history_tables.append(ch_info)
+
+    # 文書の役割推定
+    total_tables = len(inspection.tables)
+    ch_count = len(inspection.change_history_tables)
+    if total_tables == 0:
+        inspection.doc_role_guess = "unknown"
+    elif ch_count > 0 and ch_count == total_tables:
+        inspection.doc_role_guess = "change_history"
+    elif ch_count > 0 and ch_count < total_tables:
+        inspection.doc_role_guess = "mixed"
+    elif ch_count == 0:
+        inspection.doc_role_guess = "spec_body"
 
     # --- 図形の詳細 ---
     shape_details = inspect_shapes(doc)
@@ -632,6 +719,17 @@ def build_text_report(inspections: list[DocxInspection]) -> str:
     files_with_pseudo = sum(1 for i in ok_files if i.pseudo_heading_candidates)
     lines.append(f"  疑似見出し候補: 合計{total_pseudo}個（{files_with_pseudo}ファイルで検出）")
     if total_pseudo > 0:
+        # 判定理由の集計
+        reason_counter: Counter = Counter()
+        for insp in ok_files:
+            for ph in insp.pseudo_heading_candidates:
+                reason = ph.get("pseudo_heading_reason", "不明")
+                reason_counter[reason] += 1
+        lines.append("  判定理由の内訳:")
+        for reason, count in reason_counter.most_common():
+            lines.append(f"    {reason}: {count}個")
+        lines.append("")
+
         # 疑似見出しのテキストパターンを集約
         pseudo_texts: Counter = Counter()
         for insp in ok_files:
@@ -639,7 +737,7 @@ def build_text_report(inspections: list[DocxInspection]) -> str:
                 text = ph.get("text_preview", "")
                 if text:
                     pseudo_texts[text] += 1
-        lines.append("  疑似見出しとして検出されたテキスト（出現頻度順）:")
+        lines.append("  疑似見出しとして検出されたテキスト（出現頻度順、上位20件）:")
         for text, count in pseudo_texts.most_common(20):
             lines.append(f"    「{text}」: {count}件")
     lines.append("")
@@ -718,6 +816,75 @@ def build_text_report(inspections: list[DocxInspection]) -> str:
     if large_cell_tables:
         lines.append(f"  100字以上のセルを含む表: {len(large_cell_tables)}個")
         lines.append("  → セル内に長文があり、チャンキング時の考慮が必要")
+    lines.append("")
+
+    # --- 変更履歴テーブル検出結果 ---
+    lines.append("■ 変更履歴テーブル検出")
+    lines.append("")
+
+    # 文書の役割分類
+    role_counter: Counter = Counter()
+    for insp in ok_files:
+        role_counter[insp.doc_role_guess] += 1
+
+    role_labels = {
+        "change_history": "変更履歴のみ",
+        "spec_body": "仕様書本体（変更履歴なし）",
+        "mixed": "仕様書+変更履歴の混在",
+        "unknown": "不明（表なし等）",
+    }
+    lines.append("  文書の役割推定:")
+    for role, count in role_counter.most_common():
+        label = role_labels.get(role, role)
+        lines.append(f"    {label}: {count}ファイル")
+    lines.append("")
+
+    # 検出された変更履歴テーブルの詳細
+    all_ch_tables = []
+    for insp in ok_files:
+        for ch in insp.change_history_tables:
+            ch["_file"] = insp.path
+            all_ch_tables.append(ch)
+
+    lines.append(f"  変更履歴テーブル検出数: {len(all_ch_tables)}個（{sum(1 for i in ok_files if i.change_history_tables)}ファイル）")
+    lines.append(f"  検出条件: 1行目に「{'／'.join(sorted(CHANGE_HISTORY_KEYWORDS))}」のうち{CHANGE_HISTORY_MIN_MATCH}個以上を含む")
+    lines.append("")
+
+    if all_ch_tables:
+        lines.append("  検出された変更履歴テーブル（全件）:")
+        for ch in all_ch_tables:
+            first_row_str = " | ".join(ch["first_row_texts"][:6])
+            kw_str = ", ".join(ch["matched_keywords"])
+            lines.append(f"    - {Path(ch['_file']).name} / 表{ch['table_index']}: {ch['rows']}行×{ch['cols']}列")
+            lines.append(f"      1行目: [{first_row_str}]")
+            lines.append(f"      一致キーワード: {kw_str}（{ch['match_count']}個）")
+        lines.append("")
+
+        # 1行目パターンの集約（変更履歴テーブルのみ）
+        ch_patterns: Counter = Counter()
+        for ch in all_ch_tables:
+            key = " | ".join(ch["first_row_texts"][:6])
+            ch_patterns[key] += 1
+
+        if len(ch_patterns) > 1:
+            lines.append("  変更履歴テーブルの1行目バリエーション:")
+            for pattern, count in ch_patterns.most_common():
+                lines.append(f"    [{count}回] {pattern}")
+            lines.append("")
+
+    # 検出漏れの可能性チェック: 変更履歴テーブルなしファイルの表1行目
+    no_ch_files = [i for i in ok_files if not i.change_history_tables and i.tables]
+    if no_ch_files:
+        lines.append("  参考: 変更履歴テーブル未検出ファイルの表1行目パターン:")
+        misc_patterns: Counter = Counter()
+        for insp in no_ch_files:
+            for t in insp.tables:
+                if t.get("first_row_texts"):
+                    key = " | ".join(t["first_row_texts"][:5])
+                    misc_patterns[key] += 1
+        for pattern, count in misc_patterns.most_common(10):
+            lines.append(f"    [{count}回] {pattern}")
+        lines.append("  → 上記に変更履歴らしきパターンがあれば検出条件の調整が必要")
     lines.append("")
 
     # --- 図形の詳細集計 ---
