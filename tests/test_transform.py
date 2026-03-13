@@ -164,8 +164,8 @@ class TestShapeRendering:
         assert "- 処理A" in md
         assert "- 終了" in md
 
-    def test_shape_no_text_skipped(self):
-        """テキストなし図形は Markdown に出力されないこと"""
+    def test_shape_no_text_keeps_placeholder(self):
+        """テキストなし図形でも存在を示すプレースホルダが出力されること"""
         doc = IntermediateDocument()
         doc.add_shape(
             shape_type="vml",
@@ -175,9 +175,9 @@ class TestShapeRendering:
         )
 
         md = transform_to_markdown(_make_record(doc))
+        assert "[図形: vml]" in md
         assert "LOW_CONFIDENCE" not in md
         assert "<!--" not in md
-        assert "SHAPE" not in md
 
     def test_shape_with_description(self):
         """LLM 生成の説明文がある場合はそれが使われること"""

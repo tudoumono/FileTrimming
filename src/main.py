@@ -45,12 +45,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--output", "-o",
         type=Path, default=Path("output"),
-        help="出力フォルダ (default: output/)",
+        help="出力ベースフォルダ (default: output/)",
     )
     parser.add_argument(
         "--intermediate",
         type=Path, default=Path("intermediate"),
-        help="中間成果物フォルダ (default: intermediate/)",
+        help="中間成果物ベースフォルダ (default: intermediate/)",
+    )
+    parser.add_argument(
+        "--run-id",
+        default="",
+        help="実行ID (default: 自動生成 YYYYMMDD_HHMMSS)。既存の実行を再開する場合に指定",
     )
     parser.add_argument(
         "--steps", "-s",
@@ -74,8 +79,9 @@ def main(argv: list[str] | None = None) -> int:
 
     config = PipelineConfig(
         input_dir=args.input,
-        intermediate_dir=args.intermediate,
-        output_dir=args.output,
+        intermediate_base=args.intermediate,
+        output_base=args.output,
+        run_id=args.run_id,
         llm_backend=args.llm_backend,
     )
     # .env から API キー等を読み込み（CLI 引数の --llm-backend が優先）
@@ -88,13 +94,20 @@ def main(argv: list[str] | None = None) -> int:
             return 1
 
     logger = logging.getLogger(__name__)
-    logger.info("パイプライン開始: steps=%s, input=%s, output=%s", args.steps, config.input_dir, config.output_dir)
+    logger.info(
+        "パイプライン開始: run_id=%s, steps=%s, input=%s",
+        config.run_id, args.steps, config.input_dir,
+    )
+    logger.info("  intermediate: %s", config.intermediate_dir)
+    logger.info("  output:       %s", config.output_dir)
 
     results = run_pipeline(config, steps=args.steps)
 
     # サマリー出力
     print("\n" + "=" * 60)
-    print("パイプライン実行結果")
+    print(f"パイプライン実行結果 [run_id: {config.run_id}]")
+    print(f"  intermediate: {config.intermediate_dir}")
+    print(f"  output:       {config.output_dir}")
     print("=" * 60)
 
     total_ok = 0

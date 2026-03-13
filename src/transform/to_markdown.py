@@ -96,8 +96,10 @@ def _render_shape(content: dict[str, Any]) -> str:
         for t in texts:
             lines.append(f"  - {t}")
     else:
-        # テキストなし図形はスキップ（品質情報は中間 JSON に記録済み）
-        return ""
+        # テキストなし図形も存在を残す
+        # (ワークフロー図で矩形+テキストボックス重ね置きのケースがあるため)
+        shape_type = content.get("shape_type", "")
+        lines.append(f"[図形: {shape_type}]" if shape_type else "[図形]")
 
     return "\n".join(lines)
 

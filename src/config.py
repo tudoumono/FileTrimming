@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 
 
@@ -16,8 +17,22 @@ class PipelineConfig:
 
     # --- パス設定 ---
     input_dir: Path = field(default_factory=lambda: Path("input"))
-    intermediate_dir: Path = field(default_factory=lambda: Path("intermediate"))
-    output_dir: Path = field(default_factory=lambda: Path("output"))
+    intermediate_base: Path = field(default_factory=lambda: Path("intermediate"))
+    output_base: Path = field(default_factory=lambda: Path("output"))
+    run_id: str = ""  # タイムスタンプ (例: "20260313_175250")。空なら自動生成
+
+    def _ensure_run_id(self) -> str:
+        if not self.run_id:
+            self.run_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return self.run_id
+
+    @property
+    def intermediate_dir(self) -> Path:
+        return self.intermediate_base / self._ensure_run_id()
+
+    @property
+    def output_dir(self) -> Path:
+        return self.output_base / self._ensure_run_id()
 
     @property
     def normalized_dir(self) -> Path:

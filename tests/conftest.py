@@ -21,8 +21,9 @@ def config(tmp_path: Path) -> PipelineConfig:
     """テスト用パイプライン設定（tmp_path ベース）"""
     return PipelineConfig(
         input_dir=tmp_path / "input",
-        intermediate_dir=tmp_path / "intermediate",
-        output_dir=tmp_path / "output",
+        intermediate_base=tmp_path / "intermediate",
+        output_base=tmp_path / "output",
+        run_id="test_run",
     )
 
 
