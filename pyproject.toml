@@ -1,0 +1,20 @@
+[project]
+name = "doc-pipeline"
+version = "0.1.0"
+description = "ドキュメント前処理パイプライン: 各種Office文書 → 半構造化Markdown → Dify投入"
+requires-python = ">=3.11"
+dependencies = [
+    "python-docx>=1.1.0",
+    "lxml>=5.0.0",
+]
+
+[project.optional-dependencies]
+llm = [
+    "openai>=1.0.0",
+]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+doc-pipeline = "src.main:main"
