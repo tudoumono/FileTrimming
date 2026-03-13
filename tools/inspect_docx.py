@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections import Counter
 from dataclasses import asdict, dataclass, field
@@ -60,6 +61,7 @@ class ParagraphInfo:
     is_all_caps: bool
     outline_level: int | None  # Word の outlineLevel（見出しレベルの別手段）
     pseudo_heading_reason: str = ""  # 疑似見出し判定理由
+    bold_debug: str = ""  # 太字判定のデバッグ情報
 
 
 @dataclass
@@ -164,9 +166,13 @@ def get_font_size_pt(para) -> float | None:
     return None
 
 
-def get_is_bold(para) -> bool:
-    """段落が太字かどうかを判定する。"""
-    # 段落レベルの太字設定（pPr/rPr/b）をチェック
+def get_is_bold(para) -> tuple[bool, str]:
+    """段落が太字かどうかを判定する。デバッグ情報も返す。"""
+    # 1. 段落スタイル経由の太字
+    if para.style and para.style.font and para.style.font.bold:
+        return True, "style.font.bold"
+
+    # 2. 段落レベルの太字設定（pPr/rPr/b）
     ppr = para._element.find(qn("w:pPr"))
     if ppr is not None:
         rpr = ppr.find(qn("w:rPr"))
@@ -175,14 +181,35 @@ def get_is_bold(para) -> bool:
             if b is not None:
                 val = b.get(qn("w:val"))
                 if val is None or val.lower() in ("true", "1", ""):
-                    return True
+                    return True, "pPr/rPr/b"
 
-    # Run レベルで判定（テキストを持つ Run の過半数が太字なら太字とみなす）
+    # 3. Run レベルで判定
     runs_with_text = [run for run in para.runs if run.text.strip()]
     if not runs_with_text:
-        return False
-    bold_count = sum(1 for run in runs_with_text if run.bold)
-    return bold_count > len(runs_with_text) / 2
+        return False, f"runs=0/total_runs={len(para.runs)}"
+    bold_count = 0
+    xml_bold_count = 0
+    none_count = 0
+    false_count = 0
+    for run in runs_with_text:
+        if run.bold:
+            bold_count += 1
+        elif run.bold is None:
+            none_count += 1
+            rpr = run._element.find(qn("w:rPr"))
+            if rpr is not None:
+                b = rpr.find(qn("w:b"))
+                if b is not None:
+                    val = b.get(qn("w:val"))
+                    if val is None or val.lower() in ("true", "1", ""):
+                        xml_bold_count += 1
+                        bold_count += 1
+        else:
+            false_count += 1
+    total = len(runs_with_text)
+    is_bold = bold_count > total / 2
+    debug = f"runs={total},bold={bold_count - xml_bold_count},xml_b={xml_bold_count},none={none_count},false={false_count}"
+    return is_bold, debug
 
 
 def get_font_name(para) -> str | None:
@@ -551,9 +578,10 @@ def detect_change_history_table(table_detail: dict) -> dict | None:
         return None
 
     # 1行目の各セルテキストとキーワードの一致をチェック
+    # 全角スペース・半角スペース・タブなどを除去してから照合
     matched_keywords: list[str] = []
     for cell_text in first_row:
-        normalized = cell_text.strip()
+        normalized = re.sub(r"[\s\u3000]+", "", cell_text)
         for kw in CHANGE_HISTORY_KEYWORDS:
             if kw in normalized:
                 matched_keywords.append(kw)
@@ -591,7 +619,7 @@ def inspect_file(filepath: Path) -> DocxInspection:
     for i, para in enumerate(doc.paragraphs):
         text = para.text.strip()
         font_size = get_font_size_pt(para)
-        is_bold = get_is_bold(para)
+        is_bold, bold_debug = get_is_bold(para)
         font_name = get_font_name(para)
         is_all_caps = get_is_all_caps(para)
         outline_level = get_outline_level(para)
@@ -607,6 +635,7 @@ def inspect_file(filepath: Path) -> DocxInspection:
             font_name=font_name,
             is_all_caps=is_all_caps,
             outline_level=outline_level,
+            bold_debug=bold_debug,
         )
         para_infos.append(info)
 
@@ -712,6 +741,28 @@ def build_text_report(inspections: list[DocxInspection]) -> str:
     total_bold = sum(i.bold_paragraph_count for i in ok_files)
     total_paras = sum(len(i.paragraphs) for i in ok_files)
     lines.append(f"  太字の段落: {total_bold}個 / {total_paras}段落中")
+
+    # 太字デバッグ: bold_debug フィールドのパターン集計
+    bold_debug_counter: Counter = Counter()
+    for insp in ok_files:
+        for p in insp.paragraphs:
+            debug = p.get("bold_debug", "")
+            if debug:
+                bold_debug_counter[debug] += 1
+    if bold_debug_counter:
+        lines.append("  [デバッグ] 太字判定の内訳（上位10パターン）:")
+        for pattern, count in bold_debug_counter.most_common(10):
+            lines.append(f"    {pattern}: {count}段落")
+        # テキスト有りの段落のうち、run.bold が None のサンプル表示
+        none_samples = []
+        for insp in ok_files:
+            for p in insp.paragraphs:
+                if p.get("char_count", 0) > 0 and "none=" in p.get("bold_debug", "") and len(none_samples) < 5:
+                    none_samples.append(p)
+        if none_samples:
+            lines.append("  [デバッグ] run.bold=None のサンプル段落:")
+            for s in none_samples:
+                lines.append(f"    「{s['text_preview']}」 style={s['style_name']} {s['bold_debug']}")
     lines.append("")
 
     # 疑似見出し候補
