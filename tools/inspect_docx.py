@@ -166,11 +166,37 @@ def get_font_size_pt(para) -> float | None:
     return None
 
 
+def _resolve_style_bold(style) -> bool | None:
+    """スタイルの継承チェーンを辿って太字かどうかを解決する。"""
+    visited = set()
+    current = style
+    while current and current.style_id not in visited:
+        visited.add(current.style_id)
+        # スタイル定義の XML から w:b を探す
+        style_elem = current._element
+        rpr = style_elem.find(qn("w:rPr"))
+        if rpr is not None:
+            b = rpr.find(qn("w:b"))
+            if b is not None:
+                val = b.get(qn("w:val"))
+                if val is not None and val.lower() in ("false", "0"):
+                    return False
+                return True  # w:b が存在すれば太字（val なし or true/1）
+        # python-docx の font.bold が明示的に設定されていれば使う
+        if current.font and current.font.bold is not None:
+            return current.font.bold
+        # 親スタイルへ辿る
+        current = current.base_style
+    return None
+
+
 def get_is_bold(para) -> tuple[bool, str]:
     """段落が太字かどうかを判定する。デバッグ情報も返す。"""
-    # 1. 段落スタイル経由の太字
-    if para.style and para.style.font and para.style.font.bold:
-        return True, "style.font.bold"
+    # 1. 段落スタイルの継承チェーンから太字を解決
+    if para.style:
+        style_bold = _resolve_style_bold(para.style)
+        if style_bold is True:
+            return True, f"style_chain({para.style.name})"
 
     # 2. 段落レベルの太字設定（pPr/rPr/b）
     ppr = para._element.find(qn("w:pPr"))
@@ -196,14 +222,29 @@ def get_is_bold(para) -> tuple[bool, str]:
             bold_count += 1
         elif run.bold is None:
             none_count += 1
-            rpr = run._element.find(qn("w:rPr"))
-            if rpr is not None:
-                b = rpr.find(qn("w:b"))
+            # Run のスタイル（rStyle）経由の太字チェック
+            run_rpr = run._element.find(qn("w:rPr"))
+            if run_rpr is not None:
+                b = run_rpr.find(qn("w:b"))
                 if b is not None:
                     val = b.get(qn("w:val"))
                     if val is None or val.lower() in ("true", "1", ""):
                         xml_bold_count += 1
                         bold_count += 1
+                        continue
+                # rStyle 参照があればそのスタイルの太字もチェック
+                rstyle = run_rpr.find(qn("w:rStyle"))
+                if rstyle is not None:
+                    rstyle_val = rstyle.get(qn("w:val"))
+                    if rstyle_val and run.part and run.part.document:
+                        try:
+                            char_style = run.part.document.styles[rstyle_val]
+                            if _resolve_style_bold(char_style):
+                                xml_bold_count += 1
+                                bold_count += 1
+                                continue
+                        except KeyError:
+                            pass
         else:
             false_count += 1
     total = len(runs_with_text)
@@ -612,43 +653,43 @@ def inspect_file(filepath: Path) -> DocxInspection:
         inspection.error = f"読み込み失敗: {e}"
         return inspection
 
-    # --- 段落のフォントパターン ---
-    para_infos: list[ParagraphInfo] = []
-    font_sizes: list[str] = []
-
-    for i, para in enumerate(doc.paragraphs):
-        text = para.text.strip()
-        font_size = get_font_size_pt(para)
-        is_bold, bold_debug = get_is_bold(para)
-        font_name = get_font_name(para)
-        is_all_caps = get_is_all_caps(para)
-        outline_level = get_outline_level(para)
-        style_name = para.style.name if para.style else ""
-
-        info = ParagraphInfo(
-            index=i,
-            text_preview=text[:50] if text else "",
-            char_count=len(text),
-            style_name=style_name,
-            font_size_pt=font_size,
-            is_bold=is_bold,
-            font_name=font_name,
-            is_all_caps=is_all_caps,
-            outline_level=outline_level,
-            bold_debug=bold_debug,
-        )
-        para_infos.append(info)
-
-        if font_size:
-            font_sizes.append(f"{font_size}pt")
-
-    inspection.paragraphs = [asdict(p) for p in para_infos]
-    inspection.font_size_distribution = dict(Counter(font_sizes).most_common())
-    inspection.bold_paragraph_count = sum(1 for p in para_infos if p.is_bold)
-
-    # 疑似見出し検出
-    pseudo_headings = detect_pseudo_headings(para_infos)
-    inspection.pseudo_heading_candidates = [asdict(p) for p in pseudo_headings]
+    # --- 段落のフォントパターン（一時コメントアウト: 太字検出の調査中） ---
+    # para_infos: list[ParagraphInfo] = []
+    # font_sizes: list[str] = []
+    #
+    # for i, para in enumerate(doc.paragraphs):
+    #     text = para.text.strip()
+    #     font_size = get_font_size_pt(para)
+    #     is_bold, bold_debug = get_is_bold(para)
+    #     font_name = get_font_name(para)
+    #     is_all_caps = get_is_all_caps(para)
+    #     outline_level = get_outline_level(para)
+    #     style_name = para.style.name if para.style else ""
+    #
+    #     info = ParagraphInfo(
+    #         index=i,
+    #         text_preview=text[:50] if text else "",
+    #         char_count=len(text),
+    #         style_name=style_name,
+    #         font_size_pt=font_size,
+    #         is_bold=is_bold,
+    #         font_name=font_name,
+    #         is_all_caps=is_all_caps,
+    #         outline_level=outline_level,
+    #         bold_debug=bold_debug,
+    #     )
+    #     para_infos.append(info)
+    #
+    #     if font_size:
+    #         font_sizes.append(f"{font_size}pt")
+    #
+    # inspection.paragraphs = [asdict(p) for p in para_infos]
+    # inspection.font_size_distribution = dict(Counter(font_sizes).most_common())
+    # inspection.bold_paragraph_count = sum(1 for p in para_infos if p.is_bold)
+    #
+    # # 疑似見出し検出
+    # pseudo_headings = detect_pseudo_headings(para_infos)
+    # inspection.pseudo_heading_candidates = [asdict(p) for p in pseudo_headings]
 
     # --- 表の詳細 ---
     for t_idx, tbl in enumerate(doc.tables):
@@ -677,14 +718,14 @@ def inspect_file(filepath: Path) -> DocxInspection:
     elif ch_count == 0:
         inspection.doc_role_guess = "spec_body"
 
-    # --- 図形の詳細 ---
-    shape_details = inspect_shapes(doc)
-    inspection.shapes = [asdict(s) for s in shape_details]
-    inspection.shapes_with_text = sum(1 for s in shape_details if s.has_text_content)
+    # --- 図形の詳細（一時コメントアウト） ---
+    # shape_details = inspect_shapes(doc)
+    # inspection.shapes = [asdict(s) for s in shape_details]
+    # inspection.shapes_with_text = sum(1 for s in shape_details if s.has_text_content)
 
-    # --- 要素の出現順序 ---
-    order = get_element_order(doc, pseudo_headings)
-    inspection.element_order = [asdict(e) for e in order]
+    # --- 要素の出現順序（一時コメントアウト） ---
+    # order = get_element_order(doc, pseudo_headings)
+    # inspection.element_order = [asdict(e) for e in order]
 
     return inspection
 
@@ -717,94 +758,86 @@ def build_text_report(inspections: list[DocxInspection]) -> str:
         lines.append("調査可能なファイルがありません。")
         return "\n".join(lines)
 
-    # --- フォントパターン集計 ---
-    lines.append("■ フォントパターン分析")
-    lines.append("")
-
-    # 全ファイルのフォントサイズ分布を集約
-    all_sizes: Counter = Counter()
-    for insp in ok_files:
-        for size_str, count in insp.font_size_distribution.items():
-            all_sizes[size_str] += count
-
-    if all_sizes:
-        lines.append("  フォントサイズの分布（全ファイル合算）:")
-        for size_str, count in all_sizes.most_common():
-            lines.append(f"    {size_str}: {count}段落")
-        body_size = all_sizes.most_common(1)[0][0]
-        lines.append(f"  → 本文の推定フォントサイズ: {body_size}（最頻値）")
-    else:
-        lines.append("  フォントサイズ: 取得できず（スタイル経由の可能性）")
-    lines.append("")
-
-    # 太字段落
-    total_bold = sum(i.bold_paragraph_count for i in ok_files)
-    total_paras = sum(len(i.paragraphs) for i in ok_files)
-    lines.append(f"  太字の段落: {total_bold}個 / {total_paras}段落中")
-
-    # 太字デバッグ: bold_debug フィールドのパターン集計
-    bold_debug_counter: Counter = Counter()
-    for insp in ok_files:
-        for p in insp.paragraphs:
-            debug = p.get("bold_debug", "")
-            if debug:
-                bold_debug_counter[debug] += 1
-    if bold_debug_counter:
-        lines.append("  [デバッグ] 太字判定の内訳（上位10パターン）:")
-        for pattern, count in bold_debug_counter.most_common(10):
-            lines.append(f"    {pattern}: {count}段落")
-        # テキスト有りの段落のうち、run.bold が None のサンプル表示
-        none_samples = []
-        for insp in ok_files:
-            for p in insp.paragraphs:
-                if p.get("char_count", 0) > 0 and "none=" in p.get("bold_debug", "") and len(none_samples) < 5:
-                    none_samples.append(p)
-        if none_samples:
-            lines.append("  [デバッグ] run.bold=None のサンプル段落:")
-            for s in none_samples:
-                lines.append(f"    「{s['text_preview']}」 style={s['style_name']} {s['bold_debug']}")
-    lines.append("")
-
-    # 疑似見出し候補
-    total_pseudo = sum(len(i.pseudo_heading_candidates) for i in ok_files)
-    files_with_pseudo = sum(1 for i in ok_files if i.pseudo_heading_candidates)
-    lines.append(f"  疑似見出し候補: 合計{total_pseudo}個（{files_with_pseudo}ファイルで検出）")
-    if total_pseudo > 0:
-        # 判定理由の集計
-        reason_counter: Counter = Counter()
-        for insp in ok_files:
-            for ph in insp.pseudo_heading_candidates:
-                reason = ph.get("pseudo_heading_reason", "不明")
-                reason_counter[reason] += 1
-        lines.append("  判定理由の内訳:")
-        for reason, count in reason_counter.most_common():
-            lines.append(f"    {reason}: {count}個")
-        lines.append("")
-
-        # 疑似見出しのテキストパターンを集約
-        pseudo_texts: Counter = Counter()
-        for insp in ok_files:
-            for ph in insp.pseudo_heading_candidates:
-                text = ph.get("text_preview", "")
-                if text:
-                    pseudo_texts[text] += 1
-        lines.append("  疑似見出しとして検出されたテキスト（出現頻度順、上位20件）:")
-        for text, count in pseudo_texts.most_common(20):
-            lines.append(f"    「{text}」: {count}件")
-    lines.append("")
-
-    # outlineLevel
-    has_outline = 0
-    for insp in ok_files:
-        for p in insp.paragraphs:
-            if p.get("outline_level") is not None:
-                has_outline += 1
-    if has_outline > 0:
-        lines.append(f"  outlineLevel が設定された段落: {has_outline}個")
-        lines.append("  → Word の見出しスタイルは未使用だが outlineLevel で構造化されている可能性あり")
-    else:
-        lines.append("  outlineLevel: 設定なし（見出し構造は完全にフォント依存）")
-    lines.append("")
+    # --- フォントパターン集計（一時コメントアウト: 太字検出の調査中） ---
+    # lines.append("■ フォントパターン分析")
+    # lines.append("")
+    #
+    # all_sizes: Counter = Counter()
+    # for insp in ok_files:
+    #     for size_str, count in insp.font_size_distribution.items():
+    #         all_sizes[size_str] += count
+    #
+    # if all_sizes:
+    #     lines.append("  フォントサイズの分布（全ファイル合算）:")
+    #     for size_str, count in all_sizes.most_common():
+    #         lines.append(f"    {size_str}: {count}段落")
+    #     body_size = all_sizes.most_common(1)[0][0]
+    #     lines.append(f"  → 本文の推定フォントサイズ: {body_size}（最頻値）")
+    # else:
+    #     lines.append("  フォントサイズ: 取得できず（スタイル経由の可能性）")
+    # lines.append("")
+    #
+    # total_bold = sum(i.bold_paragraph_count for i in ok_files)
+    # total_paras = sum(len(i.paragraphs) for i in ok_files)
+    # lines.append(f"  太字の段落: {total_bold}個 / {total_paras}段落中")
+    #
+    # bold_debug_counter: Counter = Counter()
+    # for insp in ok_files:
+    #     for p in insp.paragraphs:
+    #         debug = p.get("bold_debug", "")
+    #         if debug:
+    #             bold_debug_counter[debug] += 1
+    # if bold_debug_counter:
+    #     lines.append("  [デバッグ] 太字判定の内訳（上位10パターン）:")
+    #     for pattern, count in bold_debug_counter.most_common(10):
+    #         lines.append(f"    {pattern}: {count}段落")
+    #     none_samples = []
+    #     for insp in ok_files:
+    #         for p in insp.paragraphs:
+    #             if p.get("char_count", 0) > 0 and "none=" in p.get("bold_debug", "") and len(none_samples) < 5:
+    #                 none_samples.append(p)
+    #     if none_samples:
+    #         lines.append("  [デバッグ] run.bold=None のサンプル段落:")
+    #         for s in none_samples:
+    #             lines.append(f"    「{s['text_preview']}」 style={s['style_name']} {s['bold_debug']}")
+    # lines.append("")
+    #
+    # total_pseudo = sum(len(i.pseudo_heading_candidates) for i in ok_files)
+    # files_with_pseudo = sum(1 for i in ok_files if i.pseudo_heading_candidates)
+    # lines.append(f"  疑似見出し候補: 合計{total_pseudo}個（{files_with_pseudo}ファイルで検出）")
+    # if total_pseudo > 0:
+    #     reason_counter: Counter = Counter()
+    #     for insp in ok_files:
+    #         for ph in insp.pseudo_heading_candidates:
+    #             reason = ph.get("pseudo_heading_reason", "不明")
+    #             reason_counter[reason] += 1
+    #     lines.append("  判定理由の内訳:")
+    #     for reason, count in reason_counter.most_common():
+    #         lines.append(f"    {reason}: {count}個")
+    #     lines.append("")
+    #
+    #     pseudo_texts: Counter = Counter()
+    #     for insp in ok_files:
+    #         for ph in insp.pseudo_heading_candidates:
+    #             text = ph.get("text_preview", "")
+    #             if text:
+    #                 pseudo_texts[text] += 1
+    #     lines.append("  疑似見出しとして検出されたテキスト（出現頻度順、上位20件）:")
+    #     for text, count in pseudo_texts.most_common(20):
+    #         lines.append(f"    「{text}」: {count}件")
+    # lines.append("")
+    #
+    # has_outline = 0
+    # for insp in ok_files:
+    #     for p in insp.paragraphs:
+    #         if p.get("outline_level") is not None:
+    #             has_outline += 1
+    # if has_outline > 0:
+    #     lines.append(f"  outlineLevel が設定された段落: {has_outline}個")
+    #     lines.append("  → Word の見出しスタイルは未使用だが outlineLevel で構造化されている可能性あり")
+    # else:
+    #     lines.append("  outlineLevel: 設定なし（見出し構造は完全にフォント依存）")
+    # lines.append("")
 
     # --- 表の詳細集計 ---
     lines.append("■ 表の詳細分析")
@@ -938,69 +971,67 @@ def build_text_report(inspections: list[DocxInspection]) -> str:
         lines.append("  → 上記に変更履歴らしきパターンがあれば検出条件の調整が必要")
     lines.append("")
 
-    # --- 図形の詳細集計 ---
-    lines.append("■ 図形の詳細分析")
-    lines.append("")
+    # --- 図形の詳細集計（一時コメントアウト） ---
+    # lines.append("■ 図形の詳細分析")
+    # lines.append("")
+    #
+    # all_shapes = []
+    # for insp in ok_files:
+    #     for s in insp.shapes:
+    #         s["_file"] = insp.path
+    #         all_shapes.append(s)
+    #
+    # if not all_shapes:
+    #     lines.append("  図形: なし")
+    # else:
+    #     shape_types: Counter = Counter()
+    #     for s in all_shapes:
+    #         shape_types[s["shape_type"]] += 1
+    #
+    #     lines.append(f"  図形の総数: {len(all_shapes)}個")
+    #     for st, count in shape_types.most_common():
+    #         lines.append(f"    {st}: {count}個")
+    #
+    #     shapes_with_text = [s for s in all_shapes if s["has_text_content"]]
+    #     lines.append(f"  テキストを含む図形: {len(shapes_with_text)}個")
+    #
+    #     if shapes_with_text:
+    #         lines.append("  図形内テキストのサンプル:")
+    #         for s in shapes_with_text[:10]:
+    #             text = s.get("text", "")
+    #             if text:
+    #                 lines.append(f"    [{s['shape_type']}] 「{text[:60]}」")
+    #
+    #     groups = [s for s in all_shapes if s["shape_type"] == "group"]
+    #     if groups:
+    #         child_counts = [s["child_count"] for s in groups]
+    #         lines.append(f"  グループ図形: {len(groups)}個（子要素数: 最小{min(child_counts)}, 最大{max(child_counts)}）")
+    #         lines.append("  → ワークフロー図やフロー図の可能性が高い")
+    # lines.append("")
 
-    all_shapes = []
-    for insp in ok_files:
-        for s in insp.shapes:
-            s["_file"] = insp.path
-            all_shapes.append(s)
-
-    if not all_shapes:
-        lines.append("  図形: なし")
-    else:
-        shape_types: Counter = Counter()
-        for s in all_shapes:
-            shape_types[s["shape_type"]] += 1
-
-        lines.append(f"  図形の総数: {len(all_shapes)}個")
-        for st, count in shape_types.most_common():
-            lines.append(f"    {st}: {count}個")
-
-        shapes_with_text = [s for s in all_shapes if s["has_text_content"]]
-        lines.append(f"  テキストを含む図形: {len(shapes_with_text)}個")
-
-        if shapes_with_text:
-            lines.append("  図形内テキストのサンプル:")
-            for s in shapes_with_text[:10]:
-                text = s.get("text", "")
-                if text:
-                    lines.append(f"    [{s['shape_type']}] 「{text[:60]}」")
-
-        groups = [s for s in all_shapes if s["shape_type"] == "group"]
-        if groups:
-            child_counts = [s["child_count"] for s in groups]
-            lines.append(f"  グループ図形: {len(groups)}個（子要素数: 最小{min(child_counts)}, 最大{max(child_counts)}）")
-            lines.append("  → ワークフロー図やフロー図の可能性が高い")
-    lines.append("")
-
-    # --- 文書構造パターン ---
-    lines.append("■ 文書構造パターン")
-    lines.append("")
-
-    for insp in ok_files:
-        if not insp.element_order:
-            continue
-        # パターン要約
-        type_sequence = [e["element_type"][0].upper() for e in insp.element_order[:30]]  # P/T
-        pseudo_count = sum(1 for e in insp.element_order if e["is_pseudo_heading"])
-        lines.append(f"  {Path(insp.path).name}:")
-        lines.append(f"    要素数: {len(insp.element_order)}、疑似見出し: {pseudo_count}個")
-        lines.append(f"    先頭30要素: {''.join(type_sequence)} (P=段落, T=表)")
-
-        # 「段落→表」の繰り返しパターンを検出
-        pt_pattern = 0
-        for j in range(len(insp.element_order) - 1):
-            if (
-                insp.element_order[j]["element_type"] == "paragraph"
-                and insp.element_order[j + 1]["element_type"] == "table"
-            ):
-                pt_pattern += 1
-        if pt_pattern > 0:
-            lines.append(f"    「段落→表」パターン: {pt_pattern}回")
-        lines.append("")
+    # --- 文書構造パターン（一時コメントアウト） ---
+    # lines.append("■ 文書構造パターン")
+    # lines.append("")
+    #
+    # for insp in ok_files:
+    #     if not insp.element_order:
+    #         continue
+    #     type_sequence = [e["element_type"][0].upper() for e in insp.element_order[:30]]
+    #     pseudo_count = sum(1 for e in insp.element_order if e["is_pseudo_heading"])
+    #     lines.append(f"  {Path(insp.path).name}:")
+    #     lines.append(f"    要素数: {len(insp.element_order)}、疑似見出し: {pseudo_count}個")
+    #     lines.append(f"    先頭30要素: {''.join(type_sequence)} (P=段落, T=表)")
+    #
+    #     pt_pattern = 0
+    #     for j in range(len(insp.element_order) - 1):
+    #         if (
+    #             insp.element_order[j]["element_type"] == "paragraph"
+    #             and insp.element_order[j + 1]["element_type"] == "table"
+    #         ):
+    #             pt_pattern += 1
+    #     if pt_pattern > 0:
+    #         lines.append(f"    「段落→表」パターン: {pt_pattern}回")
+    #     lines.append("")
 
     lines.append("=" * 60)
     lines.append("以上")
