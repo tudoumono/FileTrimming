@@ -20,3 +20,7 @@ _zip_extract/
 Thumbs.db
 .claude
 tmp
+
+.env
+input/
+intermediate/

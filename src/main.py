@@ -78,6 +78,8 @@ def main(argv: list[str] | None = None) -> int:
         output_dir=args.output,
         llm_backend=args.llm_backend,
     )
+    # .env から API キー等を読み込み（CLI 引数の --llm-backend が優先）
+    config.load_env()
 
     # 入力フォルダの存在チェック
     if "1" in args.steps or args.steps == "all":
