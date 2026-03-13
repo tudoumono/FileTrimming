@@ -5,7 +5,8 @@
   - 表は項目ラベル付き半構造化テキストに変換（Markdown テーブルではない）
   - 説明文はそのまま残す
   - 図形はテキスト説明に変換（復元困難時はフォールバック）
-  - LOW_CONFIDENCE / TABLE_FALLBACK マーカーを必要に応じて付与
+  - 品質マーカー (LOW_CONFIDENCE 等) は Markdown に埋め込まない
+    （Dify がテキストとして扱うためノイズになる。品質情報は中間 JSON に記録済み）
   - YAML front matter は付けない（Dify が認識しないため）
 """
 
@@ -59,15 +60,6 @@ def _render_table_as_labeled_text(content: dict[str, Any]) -> str:
         lines.append(f"**{caption}**")
         lines.append("")
 
-    fallback = content.get("fallback_reason", "")
-    confidence = content.get("confidence", "high")
-
-    if fallback == "change_history_table":
-        lines.append("<!-- CHANGE_HISTORY_TABLE -->")
-
-    if confidence == "low":
-        lines.append("<!-- LOW_CONFIDENCE: 表の変換精度が低い可能性があります -->")
-
     # ヘッダー行からラベルを取得
     header_row = rows[0]
     labels = [cell.get("text", f"列{i+1}") or f"列{i+1}" for i, cell in enumerate(header_row)]
@@ -94,14 +86,8 @@ def _render_shape(content: dict[str, Any]) -> str:
     """図形をテキスト説明に変換する。"""
     texts = content.get("texts", [])
     description = content.get("description", "")
-    confidence = content.get("confidence", "high")
-    fallback = content.get("fallback_reason", "")
 
     lines: list[str] = []
-
-    if confidence == "low" or fallback:
-        reason = fallback or "shape_conversion"
-        lines.append(f"<!-- LOW_CONFIDENCE: {reason} -->")
 
     if description:
         lines.append(description)
@@ -110,7 +96,8 @@ def _render_shape(content: dict[str, Any]) -> str:
         for t in texts:
             lines.append(f"  - {t}")
     else:
-        lines.append("<!-- SHAPE: テキストなし -->")
+        # テキストなし図形はスキップ（品質情報は中間 JSON に記録済み）
+        return ""
 
     return "\n".join(lines)
 

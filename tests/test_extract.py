@@ -1,0 +1,214 @@
+"""Step2 構造抽出テスト
+
+確認観点:
+  - 中間 JSON が生成される
+  - 疑似見出し検出（スタイル / フォントサイズ差 / ヒューリスティクス）
+  - 表の抽出（セルテキスト・結合セル情報）
+  - 変更履歴テーブル判定（全角スペース正規化含む）
+  - doc_role 推定（spec_body / change_history / mixed / unknown）
+  - 要素の出現順序が元文書と一致
+"""
+
+from pathlib import Path
+
+import pytest
+
+from src.config import PipelineConfig
+from src.extractors.word import extract_docx
+from src.models.metadata import ProcessStatus
+
+
+class TestHeadingDetection:
+    """疑似見出し検出のテスト"""
+
+    def test_word_heading_style(self, simple_docx: Path, config: PipelineConfig):
+        """Word 見出しスタイルで検出されること"""
+        record, result = extract_docx(simple_docx, "simple.docx", ".docx", config)
+
+        assert result.status in (ProcessStatus.SUCCESS, ProcessStatus.WARNING)
+        elements = record.document["elements"]
+
+        headings = [e for e in elements if e["type"] == "heading"]
+        assert len(headings) >= 1, "見出しが1つ以上検出されること"
+
+        # "第1章 概要" が level 1 で検出
+        h1 = [h for h in headings if "概要" in h["content"]["text"]]
+        assert len(h1) == 1
+        assert h1[0]["content"]["level"] == 1
+        assert h1[0]["content"]["detection_method"] == "style"
+
+    def test_font_size_heading(self, font_size_heading_docx: Path, config: PipelineConfig):
+        """フォントサイズ差で疑似見出しが検出されること (Oasys/Win 対応)"""
+        record, result = extract_docx(
+            font_size_heading_docx, "font_heading.docx", ".docx", config,
+        )
+
+        elements = record.document["elements"]
+        headings = [e for e in elements if e["type"] == "heading"]
+        assert len(headings) >= 2, "フォントサイズ差で2つ以上の見出しが検出されること"
+
+        # 16pt → level 1
+        h16 = [h for h in headings if "機能概要" in h["content"]["text"]]
+        assert len(h16) == 1
+        assert h16[0]["content"]["level"] == 1
+        assert "font_size" in h16[0]["content"]["detection_method"]
+
+        # 14pt → level 2
+        h14 = [h for h in headings if "入力条件" in h["content"]["text"]]
+        assert len(h14) == 1
+        assert h14[0]["content"]["level"] == 2
+
+        # 12pt → level 3
+        h12 = [h for h in headings if "必須項目一覧" in h["content"]["text"]]
+        assert len(h12) == 1
+        assert h12[0]["content"]["level"] == 3
+
+    def test_heuristic_heading(self, heuristic_heading_docx: Path, config: PipelineConfig):
+        """短文 + 句点なしパターンでの疑似見出し検出"""
+        record, result = extract_docx(
+            heuristic_heading_docx, "heuristic.docx", ".docx", config,
+        )
+
+        elements = record.document["elements"]
+        headings = [e for e in elements if e["type"] == "heading"]
+
+        # "エラーコード一覧" と "入力チェック" が見出し候補
+        heading_texts = [h["content"]["text"] for h in headings]
+        assert "エラーコード一覧" in heading_texts
+        assert "入力チェック" in heading_texts
+
+        # 句点ありの本文は見出しにならない
+        for h in headings:
+            assert not h["content"]["text"].endswith("。")
+
+
+class TestTableExtraction:
+    """表の抽出テスト"""
+
+    def test_basic_table(self, simple_docx: Path, config: PipelineConfig):
+        """基本的な表のセルテキストが正しく抽出されること"""
+        record, result = extract_docx(simple_docx, "simple.docx", ".docx", config)
+
+        elements = record.document["elements"]
+        tables = [e for e in elements if e["type"] == "table"]
+        assert len(tables) == 1
+
+        table = tables[0]["content"]
+        rows = table["rows"]
+        assert len(rows) == 3  # ヘッダー + 2データ行
+
+        # ヘッダー行
+        header_texts = [cell["text"] for cell in rows[0]]
+        assert "項目" in header_texts
+        assert "内容" in header_texts
+        assert "備考" in header_texts
+
+        # データ行
+        assert rows[1][0]["text"] == "機能A"
+        assert rows[1][1]["text"] == "入力チェック処理"
+
+    def test_merged_cells(self, merged_cells_docx: Path, config: PipelineConfig):
+        """結合セルが検出されること"""
+        record, result = extract_docx(
+            merged_cells_docx, "merged.docx", ".docx", config,
+        )
+
+        elements = record.document["elements"]
+        tables = [e for e in elements if e["type"] == "table"]
+        assert len(tables) >= 1
+
+        table = tables[0]["content"]
+        assert table["has_merged_cells"] is True
+        assert table["confidence"] == "medium"
+
+
+class TestChangeHistoryDetection:
+    """変更履歴テーブル検出テスト"""
+
+    def test_detect_with_fullwidth_spaces(
+        self, change_history_docx: Path, config: PipelineConfig,
+    ):
+        """全角スペース入りのヘッダーでも変更履歴が検出されること"""
+        record, result = extract_docx(
+            change_history_docx, "change_history.docx", ".docx", config,
+        )
+
+        elements = record.document["elements"]
+        ch_tables = [
+            e for e in elements
+            if e["type"] == "table"
+            and e["content"].get("fallback_reason") == "change_history_table"
+        ]
+        assert len(ch_tables) == 1, "全角スペース正規化後に変更履歴テーブルが検出されること"
+
+    def test_normal_table_not_detected(self, simple_docx: Path, config: PipelineConfig):
+        """通常の表は変更履歴として検出されないこと"""
+        record, result = extract_docx(simple_docx, "simple.docx", ".docx", config)
+
+        elements = record.document["elements"]
+        ch_tables = [
+            e for e in elements
+            if e["type"] == "table"
+            and e["content"].get("fallback_reason") == "change_history_table"
+        ]
+        assert len(ch_tables) == 0
+
+
+class TestDocRoleGuess:
+    """文書の役割推定テスト"""
+
+    def test_spec_body(self, simple_docx: Path, config: PipelineConfig):
+        """仕様書本体の判定"""
+        record, _ = extract_docx(simple_docx, "simple.docx", ".docx", config)
+        assert record.metadata.doc_role_guess == "spec_body"
+
+    def test_change_history(self, change_history_docx: Path, config: PipelineConfig):
+        """変更履歴のみの判定"""
+        record, _ = extract_docx(
+            change_history_docx, "change_history.docx", ".docx", config,
+        )
+        assert record.metadata.doc_role_guess == "change_history"
+
+    def test_mixed(self, mixed_docx: Path, config: PipelineConfig):
+        """仕様書 + 変更履歴の混在判定"""
+        record, _ = extract_docx(mixed_docx, "mixed.docx", ".docx", config)
+        assert record.metadata.doc_role_guess == "mixed"
+
+    def test_unknown(self, empty_docx: Path, config: PipelineConfig):
+        """表なし → unknown"""
+        record, _ = extract_docx(empty_docx, "empty.docx", ".docx", config)
+        assert record.metadata.doc_role_guess == "unknown"
+
+
+class TestElementOrder:
+    """要素の出現順序テスト"""
+
+    def test_paragraph_table_order(self, simple_docx: Path, config: PipelineConfig):
+        """段落→表→段落の順序が元文書と一致すること"""
+        record, _ = extract_docx(simple_docx, "simple.docx", ".docx", config)
+
+        elements = record.document["elements"]
+        types = [e["type"] for e in elements]
+
+        # heading → paragraph → heading → paragraph → table → heading → paragraph
+        # の順序であること（空段落除去により多少変わりうる）
+        assert types[0] == "heading"  # 第1章 概要
+
+        # 表がどこかに存在
+        assert "table" in types
+
+        # source_index が単調増加
+        indices = [e["source_index"] for e in elements]
+        assert indices == sorted(indices), "source_index が単調増加であること"
+
+
+class TestErrorHandling:
+    """エラーハンドリングテスト"""
+
+    def test_nonexistent_file(self, tmp_path: Path, config: PipelineConfig):
+        """存在しないファイルでエラーが返ること"""
+        fake_path = tmp_path / "nonexistent.docx"
+        record, result = extract_docx(fake_path, "nonexistent.docx", ".docx", config)
+
+        assert result.status == ProcessStatus.ERROR
+        assert record.document == {}
