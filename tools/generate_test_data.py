@@ -642,41 +642,38 @@ def generate_merged_cells(output_dir: Path) -> Path:
     # ヘッダー
     for i, h in enumerate(["大分類", "中分類", "項目", "値"]):
         t1.rows[0].cells[i].text = h
-    # データ
-    t1.rows[1].cells[0].text = "入力系"
-    t1.rows[1].cells[1].text = "ファイル入力"
-    t1.rows[1].cells[2].text = "形式"
-    t1.rows[1].cells[3].text = "CSV"
-    t1.rows[2].cells[0].text = "入力系"      # 縦結合対象
-    t1.rows[2].cells[1].text = "ファイル入力"  # 縦結合対象
-    t1.rows[2].cells[2].text = "文字コード"
-    t1.rows[2].cells[3].text = "UTF-8"
-    t1.rows[3].cells[0].text = "入力系"      # 縦結合対象
-    t1.rows[3].cells[1].text = "DB入力"
-    t1.rows[3].cells[2].text = "接続先"
-    t1.rows[3].cells[3].text = "PostgreSQL"
-    t1.rows[4].cells[0].text = "入力系"      # 縦結合対象
-    t1.rows[4].cells[1].text = "DB入力"       # 縦結合対象
-    t1.rows[4].cells[2].text = "タイムアウト"
-    t1.rows[4].cells[3].text = "30秒"
-    t1.rows[5].cells[0].text = "出力系"
-    t1.rows[5].cells[1].text = "帳票"
-    t1.rows[5].cells[2].text = "形式"
-    t1.rows[5].cells[3].text = "PDF"
-    t1.rows[6].cells[0].text = "出力系"      # 縦結合対象
-    t1.rows[6].cells[1].text = "帳票"         # 縦結合対象
-    t1.rows[6].cells[2].text = "用紙サイズ"
-    t1.rows[6].cells[3].text = "A4"
-    t1.rows[7].cells[0].text = "出力系"      # 縦結合対象
-    t1.rows[7].cells[1].text = "ログ"
-    t1.rows[7].cells[2].text = "出力先"
-    t1.rows[7].cells[3].text = "/var/log/app"
+    # 先に結合してからテキストを設定する（結合前にテキストがあると連結される）
     # 縦結合実行
     t1.rows[1].cells[0].merge(t1.rows[4].cells[0])  # 入力系: 4行結合
     t1.rows[1].cells[1].merge(t1.rows[2].cells[1])  # ファイル入力: 2行結合
     t1.rows[3].cells[1].merge(t1.rows[4].cells[1])  # DB入力: 2行結合
     t1.rows[5].cells[0].merge(t1.rows[7].cells[0])  # 出力系: 3行結合
     t1.rows[5].cells[1].merge(t1.rows[6].cells[1])  # 帳票: 2行結合
+    # データ（結合済みセルの先頭行にのみテキスト設定）
+    t1.rows[1].cells[0].text = "入力系"
+    t1.rows[1].cells[1].text = "ファイル入力"
+    t1.rows[1].cells[2].text = "形式"
+    t1.rows[1].cells[3].text = "CSV"
+    # row2: 大分類・中分類は結合済み（テキスト設定不要）
+    t1.rows[2].cells[2].text = "文字コード"
+    t1.rows[2].cells[3].text = "UTF-8"
+    t1.rows[3].cells[1].text = "DB入力"
+    t1.rows[3].cells[2].text = "接続先"
+    t1.rows[3].cells[3].text = "PostgreSQL"
+    # row4: 大分類・中分類は結合済み
+    t1.rows[4].cells[2].text = "タイムアウト"
+    t1.rows[4].cells[3].text = "30秒"
+    t1.rows[5].cells[0].text = "出力系"
+    t1.rows[5].cells[1].text = "帳票"
+    t1.rows[5].cells[2].text = "形式"
+    t1.rows[5].cells[3].text = "PDF"
+    # row6: 大分類・中分類は結合済み
+    t1.rows[6].cells[2].text = "用紙サイズ"
+    t1.rows[6].cells[3].text = "A4"
+    # row7: 大分類は結合済み
+    t1.rows[7].cells[1].text = "ログ"
+    t1.rows[7].cells[2].text = "出力先"
+    t1.rows[7].cells[3].text = "/var/log/app"
 
     doc.add_paragraph("")
 
@@ -715,20 +712,18 @@ def generate_merged_cells(output_dir: Path) -> Path:
     doc.add_heading("3. 縦横結合の混在（テスト結果マトリクス）", level=2)
     t3 = doc.add_table(rows=7, cols=5)
     t3.style = "Table Grid"
-    # ヘッダー（2行、横結合あり）
-    t3.rows[0].cells[0].text = ""
-    t3.rows[0].cells[1].text = "テスト環境"
+    # 先に結合してからテキスト設定
     t3.rows[0].cells[1].merge(t3.rows[0].cells[2])  # 「テスト環境」2列結合
-    t3.rows[0].cells[3].text = "本番環境"
     t3.rows[0].cells[3].merge(t3.rows[0].cells[4])  # 「本番環境」2列結合
-    # ヘッダー2行目
-    t3.rows[1].cells[0].text = "テスト項目"
+    t3.rows[0].cells[0].merge(t3.rows[1].cells[0])  # 「テスト項目」縦結合
+    # テキスト設定
+    t3.rows[0].cells[0].text = "テスト項目"
+    t3.rows[0].cells[1].text = "テスト環境"
+    t3.rows[0].cells[3].text = "本番環境"
     t3.rows[1].cells[1].text = "Windows"
     t3.rows[1].cells[2].text = "Linux"
     t3.rows[1].cells[3].text = "Windows"
     t3.rows[1].cells[4].text = "Linux"
-    # 上の空セルと結合（テスト項目の縦結合）
-    t3.rows[0].cells[0].merge(t3.rows[1].cells[0])
     # データ行
     test_items = [
         ("機能テスト", "OK", "OK", "OK", "OK"),
@@ -751,23 +746,7 @@ def generate_merged_cells(output_dir: Path) -> Path:
     for i, h in enumerate(["システム", "サブシステム", "モジュール", "機能", "状態"]):
         t4.rows[0].cells[i].text = h
 
-    data4 = [
-        # (system, subsystem, module, function, status)
-        ("基幹系", "販売管理", "受注", "受注登録", "稼働中"),
-        ("基幹系", "販売管理", "受注", "受注変更", "稼働中"),
-        ("基幹系", "販売管理", "出荷", "出荷指示", "稼働中"),
-        ("基幹系", "在庫管理", "入庫", "入庫登録", "開発中"),
-        ("基幹系", "在庫管理", "入庫", "入庫取消", "開発中"),
-        ("情報系", "帳票", "月次", "売上集計", "稼働中"),
-        ("情報系", "帳票", "月次", "在庫集計", "テスト中"),
-        ("情報系", "帳票", "日次", "日報出力", "稼働中"),
-        ("情報系", "ダッシュボード", "KPI", "KPI表示", "企画中"),
-    ]
-    for r, row in enumerate(data4, start=1):
-        for c, val in enumerate(row):
-            t4.rows[r].cells[c].text = val
-
-    # 3段階の縦結合
+    # 先に結合してからテキスト設定
     # Level 1: システム
     t4.rows[1].cells[0].merge(t4.rows[5].cells[0])  # 基幹系: 5行
     t4.rows[6].cells[0].merge(t4.rows[9].cells[0])  # 情報系: 4行
@@ -780,29 +759,66 @@ def generate_merged_cells(output_dir: Path) -> Path:
     t4.rows[4].cells[2].merge(t4.rows[5].cells[2])  # 入庫: 2行
     t4.rows[6].cells[2].merge(t4.rows[7].cells[2])  # 月次: 2行
 
+    # 結合済みセルの先頭行にのみテキスト設定
+    t4.rows[1].cells[0].text = "基幹系"
+    t4.rows[1].cells[1].text = "販売管理"
+    t4.rows[1].cells[2].text = "受注"
+    t4.rows[1].cells[3].text = "受注登録"
+    t4.rows[1].cells[4].text = "稼働中"
+    # row2: システム・サブシステム・モジュール結合済み
+    t4.rows[2].cells[3].text = "受注変更"
+    t4.rows[2].cells[4].text = "稼働中"
+    # row3: システム・サブシステム結合済み
+    t4.rows[3].cells[2].text = "出荷"
+    t4.rows[3].cells[3].text = "出荷指示"
+    t4.rows[3].cells[4].text = "稼働中"
+    # row4: システム結合済み
+    t4.rows[4].cells[1].text = "在庫管理"
+    t4.rows[4].cells[2].text = "入庫"
+    t4.rows[4].cells[3].text = "入庫登録"
+    t4.rows[4].cells[4].text = "開発中"
+    # row5: システム・サブシステム・モジュール結合済み
+    t4.rows[5].cells[3].text = "入庫取消"
+    t4.rows[5].cells[4].text = "開発中"
+    # row6: 情報系の先頭
+    t4.rows[6].cells[0].text = "情報系"
+    t4.rows[6].cells[1].text = "帳票"
+    t4.rows[6].cells[2].text = "月次"
+    t4.rows[6].cells[3].text = "売上集計"
+    t4.rows[6].cells[4].text = "稼働中"
+    # row7: システム・サブシステム・モジュール結合済み
+    t4.rows[7].cells[3].text = "在庫集計"
+    t4.rows[7].cells[4].text = "テスト中"
+    # row8: システム・サブシステム結合済み
+    t4.rows[8].cells[2].text = "日次"
+    t4.rows[8].cells[3].text = "日報出力"
+    t4.rows[8].cells[4].text = "稼働中"
+    # row9: システム結合済み
+    t4.rows[9].cells[1].text = "ダッシュボード"
+    t4.rows[9].cells[2].text = "KPI"
+    t4.rows[9].cells[3].text = "KPI表示"
+    t4.rows[9].cells[4].text = "企画中"
+
     doc.add_paragraph("")
 
     # ── 表5: 複合ヘッダー（横結合+縦結合のヘッダー） ──
     doc.add_heading("5. 複合ヘッダー（横結合+縦結合）", level=2)
     t5 = doc.add_table(rows=6, cols=6)
     t5.style = "Table Grid"
-    # 1行目ヘッダー
+    # 先に結合してからテキスト設定
+    t5.rows[0].cells[2].merge(t5.rows[0].cells[3])  # 入力: 2列結合
+    t5.rows[0].cells[4].merge(t5.rows[0].cells[5])  # 出力: 2列結合
+    t5.rows[0].cells[0].merge(t5.rows[1].cells[0])  # コード: 縦結合
+    t5.rows[0].cells[1].merge(t5.rows[1].cells[1])  # 名称: 縦結合
+    # テキスト設定
     t5.rows[0].cells[0].text = "コード"
     t5.rows[0].cells[1].text = "名称"
     t5.rows[0].cells[2].text = "入力"
-    t5.rows[0].cells[2].merge(t5.rows[0].cells[3])  # 入力: 2列結合
     t5.rows[0].cells[4].text = "出力"
-    t5.rows[0].cells[4].merge(t5.rows[0].cells[5])  # 出力: 2列結合
-    # 2行目ヘッダー（サブヘッダー）
-    t5.rows[1].cells[0].text = ""
-    t5.rows[1].cells[1].text = ""
     t5.rows[1].cells[2].text = "ファイル"
     t5.rows[1].cells[3].text = "DB"
     t5.rows[1].cells[4].text = "画面"
     t5.rows[1].cells[5].text = "帳票"
-    # コード・名称は縦結合
-    t5.rows[0].cells[0].merge(t5.rows[1].cells[0])
-    t5.rows[0].cells[1].merge(t5.rows[1].cells[1])
     # データ行
     rows5 = [
         ("F001", "受注処理", "CSV", "SELECT/INSERT", "一覧画面", "受注伝票"),
