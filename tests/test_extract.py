@@ -180,6 +180,73 @@ class TestDocRoleGuess:
         assert record.metadata.doc_role_guess == "unknown"
 
 
+class TestMergedCellExtraction:
+    """結合セル抽出の改善テスト（P1）"""
+
+    def test_horizontal_merge_dedup(self, tmp_path: Path, config: PipelineConfig):
+        """横結合セルが重複せず1回だけ抽出されること"""
+        from docx import Document as DocxDocument
+
+        doc = DocxDocument()
+        table = doc.add_table(rows=3, cols=4)
+        for i, h in enumerate(["項目", "設定値", "デフォルト", "備考"]):
+            table.rows[0].cells[i].text = h
+        # 横結合行
+        table.rows[1].cells[0].text = "■ 接続設定"
+        table.rows[1].cells[0].merge(table.rows[1].cells[3])
+        # 通常行
+        table.rows[2].cells[0].text = "ホスト名"
+        table.rows[2].cells[1].text = "db-server01"
+
+        path = tmp_path / "hmerge.docx"
+        doc.save(str(path))
+
+        record, result = extract_docx(path, "hmerge.docx", ".docx", config)
+        tables = [e for e in record.document["elements"] if e["type"] == "table"]
+        assert len(tables) == 1
+
+        rows = tables[0]["content"]["rows"]
+        # 横結合行: 1セルのみ（colspan=4）
+        banner_row = rows[1]
+        assert len(banner_row) == 1, f"横結合行は1セルのみ: got {len(banner_row)}"
+        assert banner_row[0]["text"] == "■ 接続設定"
+        assert banner_row[0]["colspan"] == 4
+
+    def test_vertical_merge_no_newline_dup(self, tmp_path: Path, config: PipelineConfig):
+        """縦結合セルのテキストに改行重複が含まれないこと"""
+        from docx import Document as DocxDocument
+        from docx.oxml.ns import qn as _qn
+        from docx.oxml import OxmlElement
+
+        doc = DocxDocument()
+        table = doc.add_table(rows=3, cols=2)
+        table.rows[0].cells[0].text = "分類"
+        table.rows[0].cells[1].text = "項目"
+        table.rows[1].cells[0].text = "入力系"
+        table.rows[1].cells[1].text = "ファイル"
+        # vMerge restart
+        tc_pr_1 = table.rows[1].cells[0]._tc.get_or_add_tcPr()
+        vm_restart = OxmlElement("w:vMerge")
+        vm_restart.set(_qn("w:val"), "restart")
+        tc_pr_1.append(vm_restart)
+        # vMerge continue
+        table.rows[2].cells[1].text = "DB"
+        tc_pr_2 = table.rows[2].cells[0]._tc.get_or_add_tcPr()
+        vm_continue = OxmlElement("w:vMerge")
+        tc_pr_2.append(vm_continue)
+
+        path = tmp_path / "vmerge.docx"
+        doc.save(str(path))
+
+        record, result = extract_docx(path, "vmerge.docx", ".docx", config)
+        tables = [e for e in record.document["elements"] if e["type"] == "table"]
+
+        # セルテキストに \n が含まれないこと
+        for row in tables[0]["content"]["rows"]:
+            for cell in row:
+                assert "\n" not in cell["text"], f"セルテキストに改行: {cell['text']}"
+
+
 class TestElementOrder:
     """要素の出現順序テスト"""
 

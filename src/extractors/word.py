@@ -132,6 +132,9 @@ def _detect_heading(
 def _extract_table(table: Table) -> tuple[list[list[CellData]], bool]:
     """表からセルデータを抽出する。
 
+    python-docx の row.cells は横結合セルを各列位置で同一 _tc として返す。
+    id(tc) で重複を排除し、各セルを1回だけ追加する。
+
     Returns:
         (rows, has_merged_cells)
     """
@@ -140,28 +143,44 @@ def _extract_table(table: Table) -> tuple[list[list[CellData]], bool]:
 
     for r_idx, row in enumerate(table.rows):
         row_data: list[CellData] = []
+        seen_tcs: set[int] = set()
+
         for c_idx, cell in enumerate(row.cells):
-            # 結合セルの検出（gridSpan / vMerge）
             tc = cell._tc
+            tc_id = id(tc)
+
+            # 横結合で同一 _tc が複数回返される → 重複スキップ
+            if tc_id in seen_tcs:
+                continue
+            seen_tcs.add(tc_id)
+
+            # 結合セルの検出（gridSpan / vMerge）
             rowspan = 1
             colspan = 1
 
-            grid_span = tc.find(qn("w:tcPr"))
-            if grid_span is not None:
-                gs = grid_span.find(qn("w:gridSpan"))
+            tc_pr = tc.find(qn("w:tcPr"))
+            if tc_pr is not None:
+                gs = tc_pr.find(qn("w:gridSpan"))
                 if gs is not None:
                     colspan = int(gs.get(qn("w:val"), "1"))
-                vm = grid_span.find(qn("w:vMerge"))
+                vm = tc_pr.find(qn("w:vMerge"))
                 if vm is not None:
                     val = vm.get(qn("w:val"), "")
                     if val != "restart":
                         # 継続セル（上のセルに結合されている）→ スキップ
                         continue
 
-            if colspan > 1 or rowspan > 1:
+            if colspan > 1:
                 has_merged = True
 
-            cell_text = cell.text.strip()
+            # セルテキスト: 縦結合セルで複数段落が \n 連結され
+            # 同一テキストが重複するケースの対策
+            raw_parts = [p.strip() for p in cell.text.split("\n") if p.strip()]
+            # 全パートが同一なら重複除去、それ以外はスペース結合
+            if raw_parts and all(p == raw_parts[0] for p in raw_parts):
+                cell_text = raw_parts[0]
+            else:
+                cell_text = " ".join(raw_parts)
             row_data.append(CellData(
                 text=cell_text,
                 row=r_idx,

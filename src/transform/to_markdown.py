@@ -37,6 +37,77 @@ def _render_paragraph(content: dict[str, Any]) -> str:
     return text
 
 
+def _expand_row_to_positions(row: list[dict[str, Any]]) -> list[tuple[str, int]]:
+    """行のセルを列位置に展開する。
+
+    Returns:
+        [(text, colspan), ...] — 各列位置のテキストと元の colspan
+    """
+    positions: list[tuple[str, int]] = []
+    for cell in row:
+        text = cell.get("text", "")
+        cs = cell.get("colspan", 1)
+        positions.append((text, cs))
+        # colspan > 1 の場合、残りの位置は同じテキストで埋める
+        for _ in range(cs - 1):
+            positions.append((text, 0))  # 0 = 展開済み位置
+    return positions
+
+
+def _build_column_labels(rows: list[list[dict[str, Any]]]) -> tuple[list[str], int]:
+    """ヘッダー行からカラム位置ベースのラベルを構築する。
+
+    多段ヘッダー対応:
+      - row[0] に colspan > 1 のセルがあり、row[1] がサブヘッダーに見える場合、
+        「親ラベル/子ラベル」形式で結合する。
+
+    Returns:
+        (labels, data_start_idx): ラベルリストとデータ開始行インデックス
+    """
+    if not rows:
+        return [], 0
+
+    header_positions = _expand_row_to_positions(rows[0])
+    total_cols = len(header_positions)
+    labels = [t or f"列{i+1}" for i, (t, _) in enumerate(header_positions)]
+
+    data_start = 1
+    has_parent_colspan = any(cell.get("colspan", 1) > 1 for cell in rows[0])
+
+    if has_parent_colspan and len(rows) > 1:
+        row1 = rows[1]
+        row1_positions = _expand_row_to_positions(row1)
+
+        # サブヘッダー判定: 展開後の列数が一致し、かつ行全体がバナーでない
+        if len(row1_positions) == total_cols and not _is_banner_row(row1, total_cols):
+            combined: list[str] = []
+            for i, ((parent, _), (child, _)) in enumerate(
+                zip(header_positions, row1_positions)
+            ):
+                if parent == child or not child:
+                    combined.append(parent or f"列{i+1}")
+                elif not parent:
+                    combined.append(child)
+                else:
+                    combined.append(f"{parent}/{child}")
+            labels = combined
+            data_start = 2
+
+    return labels, data_start
+
+
+def _is_banner_row(row: list[dict[str, Any]], total_cols: int) -> bool:
+    """行が全列スパンのバナー行（セクション区切り等）か判定する。"""
+    if len(row) == 1 and row[0].get("colspan", 1) >= total_cols:
+        return True
+    # 全セルが同一テキストの場合もバナー扱い（横結合の残骸対策）
+    if len(row) > 1:
+        texts = [c.get("text", "") for c in row]
+        if texts and all(t == texts[0] for t in texts) and texts[0]:
+            return True
+    return False
+
+
 def _render_table_as_labeled_text(content: dict[str, Any]) -> str:
     """表を項目ラベル付き半構造化テキストに変換する。
 
@@ -45,9 +116,10 @@ def _render_table_as_labeled_text(content: dict[str, Any]) -> str:
      行列の意味や制約・対応関係を壊さないことを優先」
 
     変換戦略:
-      - 1行目をヘッダー（ラベル名）として使用
-      - 2行目以降の各行を「ラベル: 値」形式で出力
-      - 結合セルや変更履歴テーブルは注意マーカー付き
+      - 多段ヘッダー対応: colspan > 1 のヘッダー + サブヘッダーを「親/子」形式で結合
+      - バナー行: 全列スパンの行はセクション区切りとして単独出力
+      - 通常行: 「ラベル: 値」形式で出力
+      - 空セル値は明示しない（省略）
     """
     rows = content.get("rows", [])
     if not rows:
@@ -60,22 +132,38 @@ def _render_table_as_labeled_text(content: dict[str, Any]) -> str:
         lines.append(f"**{caption}**")
         lines.append("")
 
-    # ヘッダー行からラベルを取得
-    header_row = rows[0]
-    labels = [cell.get("text", f"列{i+1}") or f"列{i+1}" for i, cell in enumerate(header_row)]
+    # ラベル構築（多段ヘッダー対応）
+    labels, data_start = _build_column_labels(rows)
+    total_cols = len(labels) if labels else len(rows[0])
 
-    # データ行を「ラベル: 値」形式で出力
-    for row_idx, row in enumerate(rows[1:], start=2):
-        lines.append(f"[行{row_idx}]")
-        for col_idx, cell in enumerate(row):
-            label = labels[col_idx] if col_idx < len(labels) else f"列{col_idx+1}"
-            value = cell.get("text", "")
+    # データ行を出力
+    display_row_num = 2  # 表示上の行番号（ヘッダー分をスキップ）
+    for row in rows[data_start:]:
+        # バナー行判定
+        if _is_banner_row(row, total_cols):
+            banner_text = row[0].get("text", "")
+            if banner_text:
+                lines.append(f"**{banner_text}**")
+                lines.append("")
+            display_row_num += 1
+            continue
+
+        lines.append(f"[行{display_row_num}]")
+
+        # 行のセルを列位置に展開
+        row_positions = _expand_row_to_positions(row)
+        for pos_idx, (value, cs) in enumerate(row_positions):
+            if cs == 0:
+                continue  # colspan 展開済みの位置はスキップ
+            label = labels[pos_idx] if pos_idx < len(labels) else f"列{pos_idx+1}"
             if value:
                 lines.append(f"  {label}: {value}")
+
         lines.append("")
+        display_row_num += 1
 
     # データ行がない場合（ヘッダーのみ）
-    if len(rows) <= 1:
+    if data_start >= len(rows):
         lines.append("  " + " | ".join(labels))
         lines.append("")
 

@@ -149,6 +149,143 @@ class TestTableRendering:
         assert "B" in md
 
 
+class TestMergedCellRendering:
+    """結合セル表の描画テスト（P1 改善）"""
+
+    def test_banner_row_renders_as_single_line(self):
+        """横結合で全列スパンの行がバナー（太字1行）として出力されること"""
+        doc = IntermediateDocument()
+        doc.add_table(
+            rows=[
+                [CellData(text="項目", row=0, col=0, is_header=True),
+                 CellData(text="設定値", row=0, col=1, is_header=True),
+                 CellData(text="デフォルト", row=0, col=2, is_header=True),
+                 CellData(text="備考", row=0, col=3, is_header=True)],
+                # バナー行: 1セルが全4列スパン
+                [CellData(text="■ 接続設定", row=1, col=0, colspan=4)],
+                [CellData(text="ホスト名", row=2, col=0),
+                 CellData(text="db-server01", row=2, col=1),
+                 CellData(text="localhost", row=2, col=2),
+                 CellData(text="", row=2, col=3)],
+            ],
+            has_merged_cells=True,
+        )
+
+        md = transform_to_markdown(_make_record(doc))
+
+        # バナー行は太字1行として出力（ラベル:値 形式ではない）
+        assert "**■ 接続設定**" in md
+        # バナーのテキストがラベル付きで重複しないこと
+        assert md.count("■ 接続設定") == 1
+        # 通常行はラベル形式
+        assert "項目: ホスト名" in md
+        assert "設定値: db-server01" in md
+
+    def test_banner_row_all_same_text(self):
+        """全セル同一テキストの行（抽出時の重複残骸）もバナーとして扱うこと"""
+        doc = IntermediateDocument()
+        doc.add_table(
+            rows=[
+                [CellData(text="品目", row=0, col=0, is_header=True),
+                 CellData(text="数量", row=0, col=1, is_header=True),
+                 CellData(text="単価", row=0, col=2, is_header=True),
+                 CellData(text="金額", row=0, col=3, is_header=True)],
+                [CellData(text="サーバー", row=1, col=0),
+                 CellData(text="2", row=1, col=1),
+                 CellData(text="500,000", row=1, col=2),
+                 CellData(text="1,000,000", row=1, col=3)],
+                # 横結合の合計行（全セル同一テキスト）
+                [CellData(text="小計", row=2, col=0),
+                 CellData(text="小計", row=2, col=1),
+                 CellData(text="小計", row=2, col=2),
+                 CellData(text="2,100,000", row=2, col=3)],
+            ],
+            has_merged_cells=True,
+        )
+
+        md = transform_to_markdown(_make_record(doc))
+
+        # 通常行は正常出力
+        assert "品目: サーバー" in md
+        # 合計行: 全セル同一ではない（最後が異なる）のでバナーにはならない
+        # → ラベル形式で出力される
+        assert "金額: 2,100,000" in md
+
+    def test_full_banner_row(self):
+        """全セルが完全同一テキストの行はバナーになること"""
+        doc = IntermediateDocument()
+        doc.add_table(
+            rows=[
+                [CellData(text="A", row=0, col=0, is_header=True),
+                 CellData(text="B", row=0, col=1, is_header=True)],
+                [CellData(text="区切り", row=1, col=0),
+                 CellData(text="区切り", row=1, col=1)],
+                [CellData(text="x", row=2, col=0),
+                 CellData(text="y", row=2, col=1)],
+            ],
+        )
+
+        md = transform_to_markdown(_make_record(doc))
+        assert "**区切り**" in md
+        assert md.count("区切り") == 1  # 重複なし
+
+    def test_multilevel_header(self):
+        """多段ヘッダー（colspan + サブヘッダー）が親/子ラベルに結合されること"""
+        doc = IntermediateDocument()
+        doc.add_table(
+            rows=[
+                # 親ヘッダー: テスト項目 | テスト環境(colspan=2) | 本番環境(colspan=2)
+                [CellData(text="テスト項目", row=0, col=0, is_header=True),
+                 CellData(text="テスト環境", row=0, col=1, is_header=True, colspan=2),
+                 CellData(text="本番環境", row=0, col=3, is_header=True, colspan=2)],
+                # サブヘッダー
+                [CellData(text="テスト項目", row=1, col=0),
+                 CellData(text="Windows", row=1, col=1),
+                 CellData(text="Linux", row=1, col=2),
+                 CellData(text="Windows", row=1, col=3),
+                 CellData(text="Linux", row=1, col=4)],
+                # データ行
+                [CellData(text="機能テスト", row=2, col=0),
+                 CellData(text="OK", row=2, col=1),
+                 CellData(text="OK", row=2, col=2),
+                 CellData(text="NG", row=2, col=3),
+                 CellData(text="OK", row=2, col=4)],
+            ],
+            has_merged_cells=True,
+        )
+
+        md = transform_to_markdown(_make_record(doc))
+
+        # 多段ヘッダーが結合ラベルになること
+        assert "テスト環境/Windows: OK" in md
+        assert "テスト環境/Linux: OK" in md
+        assert "本番環境/Windows: NG" in md
+        assert "本番環境/Linux: OK" in md
+        # テスト項目は親子同一なので単一ラベル
+        assert "テスト項目: 機能テスト" in md
+
+    def test_colspan_in_data_row(self):
+        """データ行の colspan セルが重複出力されないこと"""
+        doc = IntermediateDocument()
+        doc.add_table(
+            rows=[
+                [CellData(text="品目", row=0, col=0, is_header=True),
+                 CellData(text="数量", row=0, col=1, is_header=True),
+                 CellData(text="金額", row=0, col=2, is_header=True)],
+                # 合計行: 品目+数量のスパン + 金額
+                [CellData(text="合計", row=1, col=0, colspan=2),
+                 CellData(text="2,310,000", row=1, col=2)],
+            ],
+            has_merged_cells=True,
+        )
+
+        md = transform_to_markdown(_make_record(doc))
+        # 合計は1回だけ出力（colspan 展開位置はスキップ）
+        assert md.count("合計") == 1
+        assert "品目: 合計" in md
+        assert "金額: 2,310,000" in md
+
+
 class TestShapeRendering:
     def test_shape_with_texts(self):
         """テキスト付き図形がリスト形式で出力されること"""
