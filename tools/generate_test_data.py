@@ -296,18 +296,23 @@ def generate_many_objects(output_dir: Path) -> Path:
     flow_steps = ["開始", "入力チェック", "データ変換", "バリデーション", "DB登録", "結果通知", "終了"]
     for step in flow_steps:
         from PIL import Image, ImageDraw, ImageFont
-        img = Image.new("RGB", (160, 50), (230, 230, 250))
+        img = Image.new("RGB", (200, 50), (230, 230, 250))
         draw = ImageDraw.Draw(img)
-        draw.rectangle([2, 2, 157, 47], outline=(100, 100, 180), width=2)
-        # テキスト描画（フォント指定なしだとデフォルト）
+        draw.rectangle([2, 2, 197, 47], outline=(100, 100, 180), width=2)
         try:
-            draw.text((10, 15), step, fill=(0, 0, 0))
+            font = ImageFont.truetype("C:/Windows/Fonts/msgothic.ttc", 16)
+            # テキストを中央に配置
+            bbox = draw.textbbox((0, 0), step, font=font)
+            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            draw.text(((200 - tw) // 2, (50 - th) // 2), step, fill=(0, 0, 0), font=font)
         except Exception:
-            pass
+            draw.text((10, 15), step, fill=(0, 0, 0))
         buf = io.BytesIO()
         img.save(buf, format="PNG")
         buf.seek(0)
-        doc.add_picture(buf, width=Inches(1.5))
+        inline_shape = doc.add_picture(buf, width=Inches(1.8))
+        # alt text を設定（抽出時にテキスト情報を保持するため）
+        inline_shape._inline.docPr.set("descr", f"フロー図ステップ: {step}")
 
     doc.add_paragraph("↓ の矢印で接続")
 
@@ -869,6 +874,143 @@ def generate_merged_cells(output_dir: Path) -> Path:
     return path
 
 
+# ─────────────────────────────────────────────
+# 9. オブジェクト + テキストボックス重ね置きワークフロー
+# ─────────────────────────────────────────────
+def generate_overlay_workflow(output_dir: Path) -> Path:
+    """矩形オブジェクトの上にテキストボックスを重ねたワークフロー図。
+
+    実際の業務文書でよくあるパターン:
+      - 矩形 (v:rect) = テキストなしの図形オブジェクト
+      - テキストボックス (v:shape type=_x0000_t202) = 矩形の上に重ねて配置
+      - 矢印・線は別の v:line や v:shape で表現
+
+    抽出時の課題:
+      - 矩形とテキストボックスは別要素なので対応関係が分からない
+      - 位置情報 (style の left/top) から近接判定するしかない
+      - テキストなし矩形だけ抽出しても意味がない
+    """
+    doc = Document()
+    doc.add_heading("ワークフロー図（オブジェクト重ね置き）", level=1)
+    doc.add_paragraph("矩形オブジェクトの上にテキストボックスを重ねたパターン。")
+
+    # ── ワークフロー1: 承認フロー ──
+    doc.add_heading("1. 承認フロー", level=2)
+    doc.add_paragraph("以下に承認フローを示す。")
+
+    # 各ステップ: 矩形（テキストなし）＋ テキストボックス（重ね置き）
+    workflow_steps = [
+        ("申請者\n申請書作成", 0, 0),
+        ("上長\n内容確認", 200, 0),
+        ("部長\n承認判断", 400, 0),
+        ("経理\n処理実行", 600, 0),
+        ("完了", 800, 0),
+    ]
+
+    for text, left, top in workflow_steps:
+        p = doc.add_paragraph()
+        run = p.add_run()
+
+        # 1. 矩形オブジェクト（テキストなし）— v:rect
+        pict_rect = OxmlElement("w:pict")
+        vrect = _vml_element("v:rect",
+            style=f"position:absolute;left:{left}pt;top:{top}pt;width:120pt;height:50pt",
+            fillcolor="#d9e2f3",
+            strokecolor="#4472c4",
+            strokeweight="1.5pt",
+        )
+        pict_rect.append(vrect)
+        run._element.append(pict_rect)
+
+        # 2. テキストボックス（矩形の上に重ね置き）— v:shape
+        p2 = doc.add_paragraph()
+        _add_floating_textbox(p2, text, left_emu=left * 9525, top_emu=top * 9525)
+
+    # 矢印を段落テキストで表現（VML の v:line は複雑なので簡略化）
+    doc.add_paragraph("→ → → → →")
+    doc.add_paragraph("")
+
+    # ── ワークフロー2: エラーハンドリングフロー（分岐あり） ──
+    doc.add_heading("2. エラーハンドリングフロー", level=2)
+    doc.add_paragraph("以下にエラーハンドリングフローを示す。")
+
+    error_flow = [
+        # (text, left_pt, top_pt) — 分岐を含む2段構成
+        ("データ受信", 0, 0),
+        ("形式チェック", 200, 0),
+        ("判定:\nエラー有無", 400, 0),
+        # 正常系
+        ("DB登録", 600, 0),
+        ("完了通知", 800, 0),
+        # エラー系（下段）
+        ("エラーログ\n出力", 400, 80),
+        ("管理者通知", 600, 80),
+        ("リトライ待ち", 800, 80),
+    ]
+
+    for text, left, top in error_flow:
+        p = doc.add_paragraph()
+        run = p.add_run()
+
+        # 判定ボックスはひし形風に色を変える
+        is_decision = "判定" in text
+        fill = "#fce4ec" if is_decision else "#e8f5e9"
+        stroke = "#c62828" if is_decision else "#2e7d32"
+
+        pict_rect = OxmlElement("w:pict")
+        vrect = _vml_element("v:rect",
+            style=f"position:absolute;left:{left}pt;top:{top}pt;width:130pt;height:50pt",
+            fillcolor=fill,
+            strokecolor=stroke,
+            strokeweight="1.5pt",
+        )
+        pict_rect.append(vrect)
+        run._element.append(pict_rect)
+
+        p2 = doc.add_paragraph()
+        _add_floating_textbox(p2, text, left_emu=left * 9525, top_emu=top * 9525)
+
+    doc.add_paragraph("正常系: → → → →")
+    doc.add_paragraph("エラー系: ↓ → → →")
+    doc.add_paragraph("")
+
+    # ── ワークフロー3: テキストボックスのみ（矩形なし） ──
+    doc.add_heading("3. テキストボックスのみのフロー", level=2)
+    doc.add_paragraph("矩形なし、テキストボックスだけで構成されたフロー。")
+
+    textbox_only = [
+        "受付登録",
+        "データ検証",
+        "変換処理",
+        "結果出力",
+    ]
+    for i, text in enumerate(textbox_only):
+        p = doc.add_paragraph()
+        _add_floating_textbox(p, text, left_emu=i * 200 * 9525, top_emu=0)
+
+    doc.add_paragraph("")
+
+    # ── 説明文 ──
+    doc.add_heading("4. 抽出上の課題", level=2)
+    doc.add_paragraph(
+        "上記のワークフロー図では、矩形オブジェクト（テキストなし）と"
+        "テキストボックス（テキストあり）が同じ位置に重ねて配置されている。"
+    )
+    doc.add_paragraph(
+        "抽出器は矩形とテキストボックスを別々の要素として検出するため、"
+        "両者の対応関係を位置情報から推定する必要がある。"
+    )
+    doc.add_paragraph(
+        "現状のパイプラインでは、テキストボックスのテキストは抽出できるが、"
+        "テキストなし矩形はプレースホルダーとして出力される。"
+    )
+
+    path = output_dir / "overlay_workflow.docx"
+    doc.save(str(path))
+    print(f"  生成: {path}")
+    return path
+
+
 def main():
     parser = argparse.ArgumentParser(description="テストデータ .docx 生成")
     parser.add_argument(
@@ -892,9 +1034,10 @@ def main():
     generate_oasys_style(output_dir)
     generate_change_history(output_dir)
     generate_merged_cells(output_dir)
+    generate_overlay_workflow(output_dir)
 
     print()
-    print("完了: 8 ファイル生成しました。")
+    print("完了: 9 ファイル生成しました。")
 
 
 if __name__ == "__main__":

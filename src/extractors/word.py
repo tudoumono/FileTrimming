@@ -23,11 +23,14 @@ from docx.table import Table
 from docx.text.paragraph import Paragraph
 
 from src.config import PipelineConfig
+from typing import Any
+
 from src.models.intermediate import (
     CellData,
     Confidence,
     DocumentElement,
     ElementType,
+    ImageElement,
     IntermediateDocument,
     ShapeElement,
 )
@@ -200,22 +203,89 @@ def _is_change_history_table(
 # 図形の抽出
 # ---------------------------------------------------------------------------
 
-def _extract_shapes(doc: Document) -> list[ShapeElement]:
-    """文書内の浮動図形・テキストボックスを抽出する。"""
+    # NOTE: _extract_shapes() は廃止。
+    # 図形・画像は _build_element_order() → _has_floating_shape() / _has_inline_image()
+    # で段落単位でインライン検出し、正しい出現位置に挿入するようにした。
+
+
+# ---------------------------------------------------------------------------
+# 文書要素の順序付き抽出
+# ---------------------------------------------------------------------------
+
+def _has_inline_image(para_elem) -> str | None:
+    """段落要素内にインライン画像 (w:drawing 内の a:blip) があるか判定する。
+
+    Returns:
+        None: 画像なし
+        str: 画像あり（alt text を返す。なければ空文字列）
+    """
+    ns_wp = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+    for drawing in para_elem.iter(qn("w:drawing")):
+        # a:blip があれば画像
+        has_blip = any(True for _ in drawing.iter(qn("a:blip")))
+        if not has_blip:
+            # pic:pic があれば画像
+            ns_pic = "http://schemas.openxmlformats.org/drawingml/2006/picture"
+            has_pic = any(True for _ in drawing.iter(f"{{{ns_pic}}}pic"))
+            if not has_pic:
+                continue
+        # alt text を wp:docPr の descr 属性から取得
+        alt_text = ""
+        for doc_pr in drawing.iter(f"{{{ns_wp}}}docPr"):
+            alt_text = doc_pr.get("descr", "")
+            if not alt_text:
+                alt_text = doc_pr.get("title", "")
+            break
+        return alt_text
+    return None
+
+
+def _has_vml_image(para_elem) -> str | None:
+    """段落要素内に VML 画像 (w:pict 内の v:imagedata) があるか判定する。
+
+    Returns:
+        None: VML 画像なし
+        str: VML 画像あり（alt text を返す。なければ空文字列）
+    """
+    for pict in para_elem.iter(qn("w:pict")):
+        for child in pict.iter():
+            tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if tag == "imagedata":
+                # o:title 属性から alt text を取得
+                alt_text = child.get("title", "") or child.get(
+                    "{urn:schemas-microsoft-com:office:office}title", ""
+                )
+                return alt_text
+    return None
+
+
+def _parse_vml_style(style_str: str) -> dict[str, float]:
+    """VML style 属性から位置・サイズ (pt) を抽出する。"""
+    result: dict[str, float] = {}
+    for part in style_str.split(";"):
+        part = part.strip()
+        if ":" not in part:
+            continue
+        key, val = part.split(":", 1)
+        key = key.strip()
+        val = val.strip()
+        if key in ("left", "top", "width", "height"):
+            m = re.match(r"([\d.]+)", val)
+            if m:
+                result[key] = float(m.group(1))
+    return result
+
+
+def _has_floating_shape(para_elem) -> list[ShapeElement]:
+    """段落要素内の浮動図形・テキストボックスを抽出する。"""
     shapes: list[ShapeElement] = []
 
-    # InlineShapes
-    for ishape in doc.inline_shapes:
-        shape_type = str(ishape.type) if ishape.type else "unknown"
-        shapes.append(ShapeElement(
-            shape_type=f"inline:{shape_type}",
-            texts=[],
-            confidence=Confidence.MEDIUM,
-        ))
-
-    # 浮動図形 (w:drawing, mc:AlternateContent 内の図形)
-    body = doc.element.body
-    for drawing in body.iter(qn("w:drawing")):
+    # w:drawing 内の図形（画像以外）
+    for drawing in para_elem.iter(qn("w:drawing")):
+        # a:blip があれば画像なのでスキップ（_has_inline_image で処理）
+        has_blip = any(True for _ in drawing.iter(qn("a:blip")))
+        if has_blip:
+            continue
         texts = [t.text for t in drawing.iter(qn("a:t")) if t.text]
         shapes.append(ShapeElement(
             shape_type="floating",
@@ -224,46 +294,177 @@ def _extract_shapes(doc: Document) -> list[ShapeElement]:
             fallback_reason="" if texts else "no_text_content",
         ))
 
-    # VML 図形 (w:pict)
-    for pict in body.iter(qn("w:pict")):
+    # VML 図形 (w:pict) — 画像以外
+    for pict in para_elem.iter(qn("w:pict")):
+        has_imagedata = False
+        for child in pict.iter():
+            tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if tag == "imagedata":
+                has_imagedata = True
+                break
+        if has_imagedata:
+            continue  # VML 画像はスキップ
+
+        # VML 図形タイプと位置情報を取得
         texts = []
-        # VML textbox 内のテキスト
+        shape_type = "vml"
+        pos: dict[str, float] = {}
+        for child in pict.iter():
+            tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if tag in ("shape", "rect", "oval", "line"):
+                style_str = child.get("style", "")
+                pos = _parse_vml_style(style_str)
+                if tag == "rect":
+                    shape_type = "vml_rect"
+                elif tag == "shape":
+                    # _x0000_t202 = テキストボックス
+                    vtype = child.get("type", "")
+                    if "_x0000_t202" in vtype:
+                        shape_type = "vml_textbox"
+
         for t_elem in pict.iter():
             if t_elem.tag.endswith("}t") or t_elem.tag == "t":
                 if t_elem.text:
                     texts.append(t_elem.text)
+
         shapes.append(ShapeElement(
-            shape_type="vml",
+            shape_type=shape_type,
             texts=texts,
             confidence=Confidence.MEDIUM if texts else Confidence.LOW,
             fallback_reason="" if texts else "no_text_content",
+            left_pt=pos.get("left"),
+            top_pt=pos.get("top"),
+            width_pt=pos.get("width"),
+            height_pt=pos.get("height"),
         ))
 
     return shapes
 
 
-# ---------------------------------------------------------------------------
-# 文書要素の順序付き抽出
-# ---------------------------------------------------------------------------
+def _merge_overlapping_shapes(shapes: list[ShapeElement]) -> list[ShapeElement]:
+    """重なる図形をマージする。
 
-def _build_element_order(doc: Document) -> list[tuple[str, int]]:
+    テキストなし矩形 (vml_rect) とテキストあり図形 (vml_textbox 等) が
+    同じ位置に重なっている場合、テキストなし矩形を除去する。
+    """
+    if len(shapes) < 2:
+        return shapes
+
+    # 位置情報を持つ図形を分類
+    text_shapes: list[ShapeElement] = []    # テキストあり
+    empty_rects: list[ShapeElement] = []    # テキストなし矩形
+    no_pos: list[ShapeElement] = []         # 位置情報なし
+
+    for s in shapes:
+        if s.left_pt is None or s.top_pt is None:
+            no_pos.append(s)
+        elif not s.texts and s.shape_type == "vml_rect":
+            empty_rects.append(s)
+        else:
+            text_shapes.append(s)
+
+    # テキストなし矩形について、近くにテキストあり図形があれば除去
+    OVERLAP_THRESHOLD_PT = 30.0  # 30pt 以内を「重なり」とみなす
+    surviving_rects: list[ShapeElement] = []
+
+    for rect in empty_rects:
+        overlaps = False
+        for ts in text_shapes:
+            if ts.left_pt is None or ts.top_pt is None:
+                continue
+            dx = abs((rect.left_pt or 0) - (ts.left_pt or 0))
+            dy = abs((rect.top_pt or 0) - (ts.top_pt or 0))
+            if dx <= OVERLAP_THRESHOLD_PT and dy <= OVERLAP_THRESHOLD_PT:
+                overlaps = True
+                break
+        if not overlaps:
+            surviving_rects.append(rect)
+
+    return no_pos + text_shapes + surviving_rects
+
+
+def _para_has_own_text(para_elem) -> bool:
+    """段落自体（図形・テキストボックス外）にテキストがあるか判定する。"""
+    # pict / drawing 要素のセット（祖先チェック用）
+    shape_roots: set = set(
+        list(para_elem.iter(qn("w:pict"))) +
+        list(para_elem.iter(qn("w:drawing")))
+    )
+    for t_elem in para_elem.iter(qn("w:t")):
+        if not (t_elem.text and t_elem.text.strip()):
+            continue
+        # 祖先を辿って pict/drawing の中にいないか確認
+        parent = t_elem.getparent()
+        in_shape = False
+        while parent is not None and parent is not para_elem:
+            if parent in shape_roots:
+                in_shape = True
+                break
+            parent = parent.getparent()
+        if not in_shape:
+            return True
+    return False
+
+
+def _build_element_order(doc: Document) -> list[tuple[str, Any]]:
     """文書本文の XML から要素の出現順序を構築する。
 
     Returns:
-        [(element_type, index), ...] — "paragraph" or "table"
+        [(element_type, data), ...]:
+          - ("paragraph", para_idx)
+          - ("table", table_idx)
+          - ("image", alt_text_str)
+          - ("shape_inline", ShapeElement)
     """
-    order: list[tuple[str, int]] = []
+    order: list[tuple[str, Any]] = []
     para_idx = 0
     table_idx = 0
+
+    # 図形のみの段落が続く場合、テキスト段落到達時にまとめて重なり判定するために蓄積
+    pending_shapes: list[ShapeElement] = []
 
     for child in doc.element.body:
         tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
         if tag == "p":
+            # 段落内の画像チェック（VML 画像より先に DrawingML を確認）
+            inline_alt = _has_inline_image(child)
+            if inline_alt is not None:
+                order.append(("image", inline_alt))
+            else:
+                vml_alt = _has_vml_image(child)
+                if vml_alt is not None:
+                    order.append(("image", vml_alt))
+
+            # 段落内の浮動図形チェック
+            inline_shapes = _has_floating_shape(child)
+            pending_shapes.extend(inline_shapes)
+
+            # 図形外に自前のテキストがある段落に到達したら図形をフラッシュ
+            if _para_has_own_text(child) and pending_shapes:
+                merged = _merge_overlapping_shapes(pending_shapes)
+                for shape in merged:
+                    order.append(("shape_inline", shape))
+                pending_shapes = []
+
             order.append(("paragraph", para_idx))
             para_idx += 1
+
         elif tag == "tbl":
+            # テーブル前に蓄積された図形をフラッシュ
+            if pending_shapes:
+                merged = _merge_overlapping_shapes(pending_shapes)
+                for shape in merged:
+                    order.append(("shape_inline", shape))
+                pending_shapes = []
             order.append(("table", table_idx))
             table_idx += 1
+
+    # 末尾に残った図形をフラッシュ
+    if pending_shapes:
+        merged = _merge_overlapping_shapes(pending_shapes)
+        for shape in merged:
+            order.append(("shape_inline", shape))
+
     return order
 
 
@@ -317,10 +518,36 @@ def extract_docx(
     paragraphs = doc.paragraphs
     source_idx = 0
     table_counter = 0
+    shape_count = 0
+    image_count = 0
 
-    for elem_type, idx in element_order:
-        if elem_type == "paragraph" and idx < len(paragraphs):
-            para = paragraphs[idx]
+    for elem_type, idx_or_data in element_order:
+        if elem_type == "image":
+            # 段落内のインライン画像 → IMAGE 要素として追加
+            image_count += 1
+            alt_text = idx_or_data if isinstance(idx_or_data, str) else ""
+            intermediate.elements.append(DocumentElement(
+                type=ElementType.IMAGE,
+                content=ImageElement(alt_text=alt_text, description=""),
+                source_index=source_idx,
+            ))
+            source_idx += 1
+            continue
+
+        if elem_type == "shape_inline":
+            # 段落内の浮動図形 → SHAPE 要素として追加（正しい出現位置）
+            shape: ShapeElement = idx_or_data
+            shape_count += 1
+            intermediate.elements.append(DocumentElement(
+                type=ElementType.SHAPE,
+                content=shape,
+                source_index=source_idx,
+            ))
+            source_idx += 1
+            continue
+
+        if elem_type == "paragraph" and idx_or_data < len(paragraphs):
+            para = paragraphs[idx_or_data]
             text = para.text.strip()
 
             # 疑似見出し検出
@@ -362,16 +589,6 @@ def extract_docx(
 
         source_idx += 1
 
-    # --- 図形の抽出 ---
-    shapes = _extract_shapes(doc)
-    for shape in shapes:
-        intermediate.elements.append(DocumentElement(
-            type=ElementType.SHAPE,
-            content=shape,
-            source_index=source_idx,
-        ))
-        source_idx += 1
-
     # --- 変更履歴テーブル数から doc_role 推定 ---
     total_tables = len(table_data_list)
     ch_count = sum(1 for _, _, is_ch in table_data_list if is_ch)
@@ -402,8 +619,10 @@ def extract_docx(
     warnings: list[str] = []
     if ch_count > 0:
         warnings.append(f"change_history_tables={ch_count}")
-    if shapes:
-        warnings.append(f"shapes={len(shapes)}")
+    if shape_count > 0:
+        warnings.append(f"shapes={shape_count}")
+    if image_count > 0:
+        warnings.append(f"images={image_count}")
 
     status = ProcessStatus.SUCCESS
     msg = f"elements={len(intermediate.elements)}, tables={total_tables}, doc_role={doc_role}"

@@ -73,11 +73,16 @@ class TableElement:
 @dataclass
 class ShapeElement:
     """図形要素（浮動図形・テキストボックス・フロー図）"""
-    shape_type: str           # "text_box", "flowchart", "group", "picture" 等
+    shape_type: str           # "floating", "vml", "vml_rect" 等
     texts: list[str]          # 図形内のテキスト群
     description: str = ""     # LLM 生成または機械的な説明文
     confidence: Confidence = Confidence.HIGH
     fallback_reason: str = ""
+    # VML 位置情報（pt 単位、重ね置き判定に使用）
+    left_pt: float | None = None
+    top_pt: float | None = None
+    width_pt: float | None = None
+    height_pt: float | None = None
 
 
 @dataclass

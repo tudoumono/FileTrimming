@@ -82,24 +82,41 @@ def _render_table_as_labeled_text(content: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+_SHAPE_TYPE_LABEL: dict[str, str] = {
+    "vml_textbox": "テキストボックス",
+    "vml_rect": "矩形オブジェクト",
+    "vml": "図形",
+    "floating": "図形",
+}
+
+
 def _render_shape(content: dict[str, Any]) -> str:
-    """図形をテキスト説明に変換する。"""
+    """図形をテキスト説明に変換する。
+
+    テキストなし矩形 (vml_rect) はオーバーレイパターンで suppressed 済みだが、
+    残存した場合も出力しない（ノイズになるだけのため）。
+    """
     texts = content.get("texts", [])
     description = content.get("description", "")
+    shape_type = content.get("shape_type", "")
 
+    # テキストなし矩形オブジェクトはスキップ
+    if shape_type == "vml_rect" and not texts and not description:
+        return ""
+
+    label = _SHAPE_TYPE_LABEL.get(shape_type, "図形")
     lines: list[str] = []
 
     if description:
         lines.append(description)
     elif texts:
-        lines.append("[図形]")
+        lines.append(f"[{label}]")
         for t in texts:
-            lines.append(f"  - {t}")
+            for part in t.splitlines():
+                if part.strip():
+                    lines.append(f"  - {part.strip()}")
     else:
-        # テキストなし図形も存在を残す
-        # (ワークフロー図で矩形+テキストボックス重ね置きのケースがあるため)
-        shape_type = content.get("shape_type", "")
-        lines.append(f"[図形: {shape_type}]" if shape_type else "[図形]")
+        lines.append(f"[{label}]")
 
     return "\n".join(lines)
 
@@ -133,9 +150,23 @@ def transform_to_markdown(extracted_json: dict[str, Any]) -> str:
         elif elem_type == "table":
             parts.append(_render_table_as_labeled_text(content))
 
-        elif elem_type == "shape":
-            parts.append(_render_shape(content))
+        elif elem_type == "image":
+            # 画像の存在を示すプレースホルダー
+            desc = content.get("description", "")
+            alt = content.get("alt_text", "")
+            if desc:
+                parts.append(f"[画像: {desc}]")
+            elif alt:
+                parts.append(f"[画像: {alt}]")
+            else:
+                parts.append("[画像]")
             parts.append("")
+
+        elif elem_type == "shape":
+            rendered = _render_shape(content)
+            if rendered:
+                parts.append(rendered)
+                parts.append("")
 
         elif elem_type == "page_break":
             parts.append("---")
