@@ -14,7 +14,8 @@ from pathlib import Path
 import pytest
 
 from src.config import PipelineConfig
-from src.extractors.word import extract_docx
+from src.extractors.word import _group_shapes_as_flow, extract_docx
+from src.models.intermediate import ShapeElement
 from src.models.metadata import ProcessStatus
 from tests.conftest import _create_dummy_image
 
@@ -348,6 +349,67 @@ class TestImageCaptionDetection:
         images = [e for e in elements if e["type"] == "image"]
         assert len(images) == 1
         assert "画面遷移図" in images[0]["content"]["description"]
+
+
+class TestFlowGrouping:
+    """図形フローグルーピングテスト（P3）"""
+
+    def test_arrow_text_not_heading(self, tmp_path: Path, config: PipelineConfig):
+        """矢印テキストが見出しに昇格しないこと"""
+        from docx import Document as DocxDocument
+
+        doc = DocxDocument()
+        doc.add_paragraph("→ → → → →")
+        doc.add_paragraph("正常系: → → → →")
+        doc.add_paragraph("↓ の矢印で接続")
+        doc.add_paragraph("エラー処理について")
+
+        path = tmp_path / "arrows.docx"
+        doc.save(str(path))
+
+        record, _ = extract_docx(path, "arrows.docx", ".docx", config)
+        elements = record.document["elements"]
+
+        headings = [e for e in elements if e["type"] == "heading"]
+        heading_texts = [h["content"]["text"] for h in headings]
+
+        assert "→ → → → →" not in heading_texts
+        assert "正常系: → → → →" not in heading_texts
+        assert "↓ の矢印で接続" not in heading_texts
+        assert "エラー処理について" in heading_texts
+
+    def test_group_shapes_as_workflow_sorted_by_position(self):
+        """3個以上のテキスト図形が位置順に workflow へまとめられること"""
+        shapes = [
+            ShapeElement(
+                shape_type="vml_textbox",
+                texts=["部長", "承認判断"],
+                left_pt=200,
+                top_pt=0,
+            ),
+            ShapeElement(
+                shape_type="vml_textbox",
+                texts=["申請者", "申請書作成"],
+                left_pt=0,
+                top_pt=0,
+            ),
+            ShapeElement(
+                shape_type="vml_textbox",
+                texts=["上長", "内容確認"],
+                left_pt=100,
+                top_pt=0,
+            ),
+        ]
+
+        grouped = _group_shapes_as_flow(shapes)
+
+        assert len(grouped) == 1
+        assert grouped[0].shape_type == "workflow"
+        assert grouped[0].texts == [
+            "申請者 / 申請書作成",
+            "上長 / 内容確認",
+            "部長 / 承認判断",
+        ]
 
 
 class TestErrorHandling:

@@ -331,6 +331,37 @@ class TestShapeRendering:
         assert "- 開始" not in md
 
 
+class TestWorkflowRendering:
+    """フロー図描画テスト（P3）"""
+
+    def test_workflow_numbered_list(self):
+        """フロー図が番号付きリストで出力されること"""
+        doc = IntermediateDocument()
+        doc.add_shape(
+            shape_type="workflow",
+            texts=["申請者 / 申請書作成", "上長 / 内容確認", "部長 / 承認判断"],
+        )
+
+        md = transform_to_markdown(_make_record(doc))
+        assert "[フロー図]" in md
+        assert "1. 申請者 / 申請書作成" in md
+        assert "2. 上長 / 内容確認" in md
+        assert "3. 部長 / 承認判断" in md
+
+    def test_workflow_with_description(self):
+        """description がある場合はそちらが優先されること"""
+        doc = IntermediateDocument()
+        doc.add_shape(
+            shape_type="workflow",
+            texts=["ステップA", "ステップB"],
+            description="申請→承認→処理のフロー",
+        )
+
+        md = transform_to_markdown(_make_record(doc))
+        assert "申請→承認→処理のフロー" in md
+        assert "1. ステップA" not in md
+
+
 class TestOutputFormat:
     def test_no_yaml_frontmatter(self):
         """YAML front matter が含まれないこと (Dify が認識しないため)"""

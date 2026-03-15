@@ -47,6 +47,7 @@ _FIGURE_CAPTION_RE = re.compile(
     r"^(?:図|Fig\.?|Figure)(?=\s*\d|\s*[:：]|\s+)(?:\s*[:：]?\s*)(.+)$",
     re.IGNORECASE,
 )
+_ARROW_CHARS = set("→←↑↓⇒⇐⇑⇓▶▷►▸◀◁◄◂➔➡➜➞")
 
 
 # ---------------------------------------------------------------------------
@@ -87,6 +88,11 @@ def _is_figure_caption(text: str) -> str | None:
 
     caption = match.group(1).strip()
     return caption or None
+
+
+def _is_arrow_annotation(text: str) -> bool:
+    """矢印記号を含む注釈テキスト（フロー図の接続表現）か判定する。"""
+    return any(char in _ARROW_CHARS for char in text)
 
 
 def _detect_heading(
@@ -139,7 +145,8 @@ def _detect_heading(
     if len(text) <= 30 and not text.endswith(("。", ".", "、", ",")):
         # ただし数字のみ、空白のみは除外
         if re.search(r"[\u3040-\u9fff\uff01-\uff5ea-zA-Z]", text):
-            return (3, "heuristic:short_no_period")
+            if not _is_arrow_annotation(text):
+                return (3, "heuristic:short_no_period")
 
     return None
 
@@ -421,6 +428,54 @@ def _merge_overlapping_shapes(shapes: list[ShapeElement]) -> list[ShapeElement]:
     return no_pos + text_shapes + surviving_rects
 
 
+def _group_shapes_as_flow(shapes: list[ShapeElement]) -> list[ShapeElement]:
+    """連続する図形を位置情報でソートし、フロー図としてグルーピングする。"""
+    if len(shapes) < 3:
+        return shapes
+
+    text_shapes = [shape for shape in shapes if shape.texts]
+    if len(text_shapes) < 3:
+        return shapes
+
+    has_pos = [
+        shape for shape in text_shapes
+        if shape.top_pt is not None and shape.left_pt is not None
+    ]
+    no_pos = [
+        shape for shape in text_shapes
+        if shape.top_pt is None or shape.left_pt is None
+    ]
+
+    if len(has_pos) >= 2:
+        has_pos.sort(key=lambda shape: (shape.top_pt or 0, shape.left_pt or 0))
+        sorted_shapes = has_pos + no_pos
+    else:
+        sorted_shapes = text_shapes
+
+    flow_texts: list[str] = []
+    for shape in sorted_shapes:
+        parts = [
+            part.strip()
+            for text in shape.texts
+            for part in text.splitlines()
+            if part.strip()
+        ]
+        combined = " / ".join(parts)
+        if combined:
+            flow_texts.append(combined)
+
+    if not flow_texts:
+        return shapes
+
+    workflow = ShapeElement(
+        shape_type="workflow",
+        texts=flow_texts,
+        confidence=Confidence.MEDIUM,
+        fallback_reason="",
+    )
+    return [workflow]
+
+
 def _para_has_own_text(para_elem) -> bool:
     """段落自体（図形・テキストボックス外）にテキストがあるか判定する。"""
     # pict / drawing 要素のセット（祖先チェック用）
@@ -480,7 +535,8 @@ def _build_element_order(doc: Document) -> list[tuple[str, Any]]:
             # 図形外に自前のテキストがある段落に到達したら図形をフラッシュ
             if _para_has_own_text(child) and pending_shapes:
                 merged = _merge_overlapping_shapes(pending_shapes)
-                for shape in merged:
+                grouped = _group_shapes_as_flow(merged)
+                for shape in grouped:
                     order.append(("shape_inline", shape))
                 pending_shapes = []
 
@@ -491,7 +547,8 @@ def _build_element_order(doc: Document) -> list[tuple[str, Any]]:
             # テーブル前に蓄積された図形をフラッシュ
             if pending_shapes:
                 merged = _merge_overlapping_shapes(pending_shapes)
-                for shape in merged:
+                grouped = _group_shapes_as_flow(merged)
+                for shape in grouped:
                     order.append(("shape_inline", shape))
                 pending_shapes = []
             order.append(("table", table_idx))
@@ -500,7 +557,8 @@ def _build_element_order(doc: Document) -> list[tuple[str, Any]]:
     # 末尾に残った図形をフラッシュ
     if pending_shapes:
         merged = _merge_overlapping_shapes(pending_shapes)
-        for shape in merged:
+        grouped = _group_shapes_as_flow(merged)
+        for shape in grouped:
             order.append(("shape_inline", shape))
 
     return order

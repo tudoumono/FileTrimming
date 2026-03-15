@@ -175,6 +175,7 @@ _SHAPE_TYPE_LABEL: dict[str, str] = {
     "vml_rect": "矩形オブジェクト",
     "vml": "図形",
     "floating": "図形",
+    "workflow": "フロー図",
 }
 
 
@@ -197,6 +198,10 @@ def _render_shape(content: dict[str, Any]) -> str:
 
     if description:
         lines.append(description)
+    elif shape_type == "workflow" and texts:
+        lines.append(f"[{label}]")
+        for idx, text in enumerate(texts, 1):
+            lines.append(f"  {idx}. {text}")
     elif texts:
         lines.append(f"[{label}]")
         for t in texts:
