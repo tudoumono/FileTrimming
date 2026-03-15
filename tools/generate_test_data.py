@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import io
 import struct
+from functools import lru_cache
 from pathlib import Path
 
 from docx import Document
@@ -35,6 +36,12 @@ _NSMAP = {
     "v": "urn:schemas-microsoft-com:vml",
     "o": "urn:schemas-microsoft-com:office:office",
 }
+_JP_FONT_CANDIDATES = [
+    Path("C:/Windows/Fonts/msgothic.ttc"),
+    Path("C:/Windows/Fonts/YuGothM.ttc"),
+    Path("C:/Windows/Fonts/meiryo.ttc"),
+    Path("C:/Windows/Fonts/MSMINCHO.TTC"),
+]
 
 
 def _vml_element(tag: str, **attribs) -> etree._Element:
@@ -47,6 +54,20 @@ def _vml_element(tag: str, **attribs) -> etree._Element:
     for k, v in attribs.items():
         el.set(k, v)
     return el
+
+
+@lru_cache(maxsize=16)
+def _load_japanese_font(size: int):
+    from PIL import ImageFont
+
+    for font_path in _JP_FONT_CANDIDATES:
+        if not font_path.exists():
+            continue
+        try:
+            return ImageFont.truetype(str(font_path), size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
 
 
 def _make_dummy_png(width: int = 100, height: int = 80, color: tuple = (70, 130, 180), *, noisy: bool = False) -> bytes:
@@ -295,18 +316,14 @@ def generate_many_objects(output_dir: Path) -> Path:
     # フロー図の各ステップを画像で模擬
     flow_steps = ["開始", "入力チェック", "データ変換", "バリデーション", "DB登録", "結果通知", "終了"]
     for step in flow_steps:
-        from PIL import Image, ImageDraw, ImageFont
+        from PIL import Image, ImageDraw
         img = Image.new("RGB", (200, 50), (230, 230, 250))
         draw = ImageDraw.Draw(img)
         draw.rectangle([2, 2, 197, 47], outline=(100, 100, 180), width=2)
-        try:
-            font = ImageFont.truetype("C:/Windows/Fonts/msgothic.ttc", 16)
-            # テキストを中央に配置
-            bbox = draw.textbbox((0, 0), step, font=font)
-            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-            draw.text(((200 - tw) // 2, (50 - th) // 2), step, fill=(0, 0, 0), font=font)
-        except Exception:
-            draw.text((10, 15), step, fill=(0, 0, 0))
+        font = _load_japanese_font(16)
+        bbox = draw.textbbox((0, 0), step, font=font)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        draw.text(((200 - tw) // 2, (50 - th) // 2), step, fill=(0, 0, 0), font=font)
         buf = io.BytesIO()
         img.save(buf, format="PNG")
         buf.seek(0)
