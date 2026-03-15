@@ -13,7 +13,6 @@ env/
 .ruff_cache/
 
 work/
-output/
 _zip_extract/
 
 .DS_Store
@@ -22,5 +21,4 @@ Thumbs.db
 tmp
 
 .env
-input/
 intermediate/
