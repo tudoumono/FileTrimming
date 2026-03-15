@@ -85,8 +85,8 @@ class TestTableRendering:
         assert "内容: データ更新" in md
 
         # 行番号
+        assert "[行1]" in md
         assert "[行2]" in md
-        assert "[行3]" in md
 
     def test_table_caption(self):
         """表のキャプションが出力されること"""

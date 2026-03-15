@@ -54,35 +54,169 @@ def _expand_row_to_positions(row: list[dict[str, Any]]) -> list[tuple[str, int]]
     return positions
 
 
-def _build_column_labels(rows: list[list[dict[str, Any]]]) -> tuple[list[str], int]:
+def _is_empty_row(row: list[dict[str, Any]]) -> bool:
+    """行が完全に空（全セルのテキストが空）かどうか判定する。"""
+    return all(not cell.get("text", "") for cell in row)
+
+
+def _is_form_field_row(row: list[dict[str, Any]], total_cols: int) -> bool:
+    """行がフォームフィールド（ラベル-値ペア）行か判定する。
+
+    フォーム型 Excel では「項目名 [colspan=N] + 値 [colspan=M]」のように
+    少数のセルが大きく結合されている行がある。これはヘッダー行ではない。
+
+    判定基準:
+      - 総列数が 3 以上（2列テーブルはラベル+値が通常の構造）
+      - テキストのあるセル数が総列数の 3/4 未満
+      - テキストのある全セルが colspan >= 2（セル結合によるレイアウト）
+        ※端の空セル（cs=1）はレイアウトの残骸なので無視
+    """
+    if not row or total_cols <= 2:
+        return False
+    # テキストのあるセルのみで判定（空セルは無視）
+    text_cells = [c for c in row if c.get("text", "")]
+    if not text_cells:
+        return False
+    if len(text_cells) >= total_cols * 3 / 4:
+        return False
+    return all(cell.get("colspan", 1) >= 2 for cell in text_cells)
+
+
+def _estimate_total_cols(rows: list[list[dict[str, Any]]]) -> int:
+    """テーブル全体の列数を推定する（最大展開幅）。"""
+    max_cols = 0
+    for row in rows:
+        positions = _expand_row_to_positions(row)
+        if len(positions) > max_cols:
+            max_cols = len(positions)
+    return max_cols
+
+
+def _render_form_field_row(row: list[dict[str, Any]]) -> list[str]:
+    """フォームフィールド行をラベル-値ペアとして出力する。
+
+    セルの並び方に応じて自動判定:
+      - 2セル: 単一のラベル-値ペア
+      - 偶数セル: ラベル-値ペアの繰り返し
+      - 奇数セル: 最後のセルは単独出力
+      - 1セル: そのまま出力
+    """
+    cells = [c for c in row if c.get("text", "")]
+    lines: list[str] = []
+
+    if len(cells) == 0:
+        return lines
+    elif len(cells) == 1:
+        lines.append(cells[0]["text"])
+    elif len(cells) == 2:
+        lines.append(f"{cells[0]['text']}: {cells[1]['text']}")
+    else:
+        # 複数ペア: 交互にラベル-値
+        for j in range(0, len(cells) - 1, 2):
+            label_text = cells[j].get("text", "")
+            value_text = cells[j + 1].get("text", "") if j + 1 < len(cells) else ""
+            if label_text and value_text:
+                lines.append(f"{label_text}: {value_text}")
+            elif label_text:
+                lines.append(label_text)
+        if len(cells) % 2 == 1:
+            lines.append(cells[-1].get("text", ""))
+
+    return lines
+
+
+def _is_form_grid_table(rows: list[list[dict[str, Any]]], total_cols: int) -> bool:
+    """テーブル全体がフォーム型（ヘッダー行なし）か判定する。
+
+    判定基準: 非空・非バナー・非セクション見出しの全行がフォームフィールド行であればフォーム型。
+    データテーブル型なら少なくとも1行はヘッダー候補（セル数 ≈ 列数）がある。
+    """
+    if total_cols <= 2:
+        return False
+
+    content_rows = 0
+    form_rows = 0
+    for row in rows:
+        if _is_empty_row(row):
+            continue
+        positions = _expand_row_to_positions(row)
+        if _is_banner_row(row, len(positions)):
+            continue
+        if _is_section_header_row(row, total_cols):
+            continue
+        content_rows += 1
+        if _is_form_field_row(row, total_cols):
+            form_rows += 1
+
+    return content_rows > 0 and form_rows == content_rows
+
+
+def _should_skip_as_header(row: list[dict[str, Any]], total_cols: int) -> bool:
+    """ヘッダー候補から除外すべき行か判定する。"""
+    if _is_empty_row(row):
+        return True
+    positions = _expand_row_to_positions(row)
+    if _is_banner_row(row, len(positions)):
+        return True
+    if _is_section_header_row(row, total_cols):
+        return True
+    if _is_form_field_row(row, total_cols):
+        return True
+    return False
+
+
+def _find_header_row(
+    rows: list[list[dict[str, Any]]], total_cols: int,
+) -> tuple[int, list[tuple[str, int]], bool]:
+    """先頭のバナー行・空行・セクション見出し・フォーム行をスキップしてヘッダー行を見つける。
+
+    Returns:
+        (header_idx, header_positions, found): ヘッダー行のインデックス、
+        展開済み列位置、ヘッダーが見つかったかどうか
+    """
+    for i, row in enumerate(rows):
+        if _should_skip_as_header(row, total_cols):
+            continue
+        return i, _expand_row_to_positions(row), True
+    return -1, [], False
+
+
+def _build_column_labels(
+    rows: list[list[dict[str, Any]]], total_cols: int,
+) -> tuple[list[str], int, bool]:
     """ヘッダー行からカラム位置ベースのラベルを構築する。
 
     多段ヘッダー対応:
       - row[0] に colspan > 1 のセルがあり、row[1] がサブヘッダーに見える場合、
         「親ラベル/子ラベル」形式で結合する。
+      - 先頭のバナー行（全列スパンのタイトル行）と空行はスキップする。
 
     Returns:
-        (labels, data_start_idx): ラベルリストとデータ開始行インデックス
+        (labels, data_start_idx, header_found): ラベルリスト、データ開始行、
+        ヘッダーが見つかったかどうか
     """
     if not rows:
-        return [], 0
+        return [], 0, False
 
-    header_positions = _expand_row_to_positions(rows[0])
-    total_cols = len(header_positions)
+    header_idx, header_positions, found = _find_header_row(rows, total_cols)
+    if not found:
+        return [], 0, False
+
+    hdr_cols = len(header_positions)
     labels = [t or f"列{i+1}" for i, (t, _) in enumerate(header_positions)]
 
-    data_start = 1
-    has_parent_colspan = any(cell.get("colspan", 1) > 1 for cell in rows[0])
+    data_start = header_idx + 1
+    has_parent_colspan = any(cell.get("colspan", 1) > 1 for cell in rows[header_idx])
 
-    if has_parent_colspan and len(rows) > 1:
-        row1 = rows[1]
-        row1_positions = _expand_row_to_positions(row1)
+    if has_parent_colspan and header_idx + 1 < len(rows):
+        row_next = rows[header_idx + 1]
+        row_next_positions = _expand_row_to_positions(row_next)
 
         # サブヘッダー判定: 展開後の列数が一致し、かつ行全体がバナーでない
-        if len(row1_positions) == total_cols and not _is_banner_row(row1, total_cols):
+        if len(row_next_positions) == hdr_cols and not _is_banner_row(row_next, hdr_cols):
             combined: list[str] = []
             for i, ((parent, _), (child, _)) in enumerate(
-                zip(header_positions, row1_positions)
+                zip(header_positions, row_next_positions)
             ):
                 if parent == child or not child:
                     combined.append(parent or f"列{i+1}")
@@ -91,9 +225,9 @@ def _build_column_labels(rows: list[list[dict[str, Any]]]) -> tuple[list[str], i
                 else:
                     combined.append(f"{parent}/{child}")
             labels = combined
-            data_start = 2
+            data_start = header_idx + 2
 
-    return labels, data_start
+    return labels, data_start, True
 
 
 def _is_banner_row(row: list[dict[str, Any]], total_cols: int) -> bool:
@@ -108,6 +242,173 @@ def _is_banner_row(row: list[dict[str, Any]], total_cols: int) -> bool:
     return False
 
 
+def _is_section_header_row(row: list[dict[str, Any]], total_cols: int) -> bool:
+    """行がセクション見出し行か判定する。
+
+    1つのセルが列数の 2/3 超を占める場合、セクション区切りと見なす。
+    例: 「■ 売上データ」cs=8 + 「問い合わせ履歴」cs=1（11列テーブル）
+    バナー行（全列スパン）との違い: 端に小さなセルが付いている場合にも対応。
+
+    閾値 2/3: 合計行等の通常の結合セル（cs=2 in 3列 = 67%）を除外しつつ、
+    セクション見出し（cs=8 in 11列 = 73%）を検出する。
+    """
+    if total_cols <= 4:
+        return False
+    threshold = total_cols * 2 / 3
+    for cell in row:
+        if cell.get("text", "") and cell.get("colspan", 1) > threshold:
+            return True
+    return False
+
+
+def _get_section_header_text(row: list[dict[str, Any]], total_cols: int) -> str:
+    """セクション見出し行からテキストを取得する。支配的セルのテキストを返す。"""
+    parts = []
+    for cell in row:
+        text = cell.get("text", "")
+        if text:
+            parts.append(text)
+    return " / ".join(parts) if parts else ""
+
+
+def _render_form_grid(rows: list[list[dict[str, Any]]], total_cols: int) -> str:
+    """フォーム型テーブルを全行ラベル-値ペアとして出力する。
+
+    フォーム型: ヘッダー行が存在せず、全行がラベル-値ペアの結合セルで構成される。
+    業務申請書、稟議書、設定シート等でよく見られるレイアウト。
+    """
+    lines: list[str] = []
+    for row in rows:
+        if _is_empty_row(row):
+            continue
+        positions = _expand_row_to_positions(row)
+        if _is_banner_row(row, len(positions)):
+            banner_text = row[0].get("text", "")
+            if banner_text:
+                lines.append(f"**{banner_text}**")
+                lines.append("")
+            continue
+        field_lines = _render_form_field_row(row)
+        lines.extend(field_lines)
+        if field_lines:
+            lines.append("")
+    return "\n".join(lines)
+
+
+def _render_pre_header_rows(
+    rows: list[list[dict[str, Any]]], data_start: int, total_cols: int,
+) -> list[str]:
+    """ヘッダーより前の行を出力する（バナー→太字、フォーム→ラベル: 値）。"""
+    lines: list[str] = []
+    for row in rows[:data_start]:
+        if _is_empty_row(row):
+            continue
+        positions = _expand_row_to_positions(row)
+        if _is_banner_row(row, len(positions)) or _is_section_header_row(row, total_cols):
+            text = _get_section_header_text(row, total_cols)
+            if text:
+                lines.append(f"**{text}**")
+                lines.append("")
+        elif _is_form_field_row(row, total_cols):
+            field_lines = _render_form_field_row(row)
+            lines.extend(field_lines)
+            if field_lines:
+                lines.append("")
+    return lines
+
+
+def _render_data_table(
+    rows: list[list[dict[str, Any]]],
+    labels: list[str],
+    data_start: int,
+    total_cols: int,
+) -> str:
+    """データテーブル型を出力する。
+
+    対応するレイアウト:
+      - ヘッダー前のフォーム行（混在型: 請求書の上部にフォーム部分）
+      - セクション分割テーブル（バナー行の後に新ヘッダーが出現 → ラベルを再構築）
+    """
+    lines: list[str] = []
+
+    # ヘッダーより前の行を出力
+    lines.extend(_render_pre_header_rows(rows, data_start, total_cols))
+
+    # データ行を出力（セクション分割対応）
+    display_row_num = 1
+    i = data_start
+    while i < len(rows):
+        row = rows[i]
+
+        if _is_empty_row(row):
+            i += 1
+            continue
+
+        positions = _expand_row_to_positions(row)
+
+        # セクション見出し行 → 見出し出力 + 次行のヘッダー再検出
+        if _is_section_header_row(row, total_cols):
+            text = _get_section_header_text(row, total_cols)
+            if text:
+                lines.append(f"**{text}**")
+                lines.append("")
+
+            # セクション見出し後の次の非空行がヘッダー候補か確認
+            j = i + 1
+            while j < len(rows) and _is_empty_row(rows[j]):
+                j += 1
+            if j < len(rows) and not _should_skip_as_header(rows[j], total_cols):
+                # 新しいヘッダー行を検出 → ラベルを再構築
+                new_positions = _expand_row_to_positions(rows[j])
+                labels = [t or f"列{k+1}" for k, (t, _) in enumerate(new_positions)]
+                display_row_num = 1
+                i = j + 1  # ヘッダー行をスキップ
+                continue
+
+            i += 1
+            continue
+
+        # バナー行 → 太字出力のみ（ヘッダー再検出しない）
+        if _is_banner_row(row, len(positions)):
+            banner_text = row[0].get("text", "")
+            if banner_text:
+                lines.append(f"**{banner_text}**")
+                lines.append("")
+            i += 1
+            continue
+
+        # フォームフィールド行がデータ部分に混在する場合
+        if _is_form_field_row(row, total_cols):
+            field_lines = _render_form_field_row(row)
+            lines.extend(field_lines)
+            if field_lines:
+                lines.append("")
+            i += 1
+            continue
+
+        lines.append(f"[行{display_row_num}]")
+
+        # 行のセルを列位置に展開
+        row_positions = _expand_row_to_positions(row)
+        for pos_idx, (value, cs) in enumerate(row_positions):
+            if cs == 0:
+                continue
+            label = labels[pos_idx] if pos_idx < len(labels) else f"列{pos_idx+1}"
+            if value:
+                lines.append(f"  {label}: {value}")
+
+        lines.append("")
+        display_row_num += 1
+        i += 1
+
+    # データ行がない場合（ヘッダーのみ）
+    if data_start >= len(rows):
+        lines.append("  " + " | ".join(labels))
+        lines.append("")
+
+    return "\n".join(lines)
+
+
 def _render_table_as_labeled_text(content: dict[str, Any]) -> str:
     """表を項目ラベル付き半構造化テキストに変換する。
 
@@ -115,11 +416,10 @@ def _render_table_as_labeled_text(content: dict[str, Any]) -> str:
     「表は Markdown テーブルではなく項目ラベル付き半構造化テキストに変換して渡す。
      行列の意味や制約・対応関係を壊さないことを優先」
 
-    変換戦略:
-      - 多段ヘッダー対応: colspan > 1 のヘッダー + サブヘッダーを「親/子」形式で結合
-      - バナー行: 全列スパンの行はセクション区切りとして単独出力
-      - 通常行: 「ラベル: 値」形式で出力
-      - 空セル値は明示しない（省略）
+    テーブル型の自動判定:
+      1. フォーム型: 全行がラベル-値ペア（全セル colspan >= 2）→ 全行をペア出力
+      2. データテーブル型: ヘッダー行あり → ヘッダー + ラベル付きデータ行
+      3. 混在型: ヘッダー前にフォーム行、以降データ行
     """
     rows = content.get("rows", [])
     if not rows:
@@ -132,40 +432,17 @@ def _render_table_as_labeled_text(content: dict[str, Any]) -> str:
         lines.append(f"**{caption}**")
         lines.append("")
 
-    # ラベル構築（多段ヘッダー対応）
-    labels, data_start = _build_column_labels(rows)
-    total_cols = len(labels) if labels else len(rows[0])
+    total_cols = _estimate_total_cols(rows)
 
-    # データ行を出力
-    display_row_num = 2  # 表示上の行番号（ヘッダー分をスキップ）
-    for row in rows[data_start:]:
-        # バナー行判定
-        if _is_banner_row(row, total_cols):
-            banner_text = row[0].get("text", "")
-            if banner_text:
-                lines.append(f"**{banner_text}**")
-                lines.append("")
-            display_row_num += 1
-            continue
-
-        lines.append(f"[行{display_row_num}]")
-
-        # 行のセルを列位置に展開
-        row_positions = _expand_row_to_positions(row)
-        for pos_idx, (value, cs) in enumerate(row_positions):
-            if cs == 0:
-                continue  # colspan 展開済みの位置はスキップ
-            label = labels[pos_idx] if pos_idx < len(labels) else f"列{pos_idx+1}"
-            if value:
-                lines.append(f"  {label}: {value}")
-
-        lines.append("")
-        display_row_num += 1
-
-    # データ行がない場合（ヘッダーのみ）
-    if data_start >= len(rows):
-        lines.append("  " + " | ".join(labels))
-        lines.append("")
+    # テーブル型判定: フォーム型 vs データテーブル型
+    if _is_form_grid_table(rows, total_cols):
+        # フォーム型: 全行をラベル-値ペアとして出力
+        lines.append(_render_form_grid(rows, total_cols))
+    else:
+        # データテーブル型（混在型含む）
+        labels, data_start, _ = _build_column_labels(rows, total_cols)
+        effective_cols = len(labels) if labels else total_cols
+        lines.append(_render_data_table(rows, labels, data_start, effective_cols))
 
     return "\n".join(lines)
 
