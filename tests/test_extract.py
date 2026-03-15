@@ -512,6 +512,86 @@ class TestHeadingPrecision:
         assert h[0]["content"]["level"] == 2
 
 
+class TestTableCaptionDedup:
+    """表キャプション重複除去テスト（P5）"""
+
+    def test_caption_paragraph_removed(self, tmp_path: Path, config: PipelineConfig):
+        """表の直前段落がキャプションに使われた場合、段落要素が除去されること"""
+        from docx import Document as DocxDocument
+
+        doc = DocxDocument()
+        doc.add_heading("セクション", level=2)
+        caption_text = "機能一覧表。"
+        doc.add_paragraph(caption_text)
+        table = doc.add_table(rows=2, cols=2)
+        table.rows[0].cells[0].text = "項目"
+        table.rows[0].cells[1].text = "値"
+        table.rows[1].cells[0].text = "A"
+        table.rows[1].cells[1].text = "1"
+
+        path = tmp_path / "caption_dedup.docx"
+        doc.save(str(path))
+
+        record, _ = extract_docx(path, "caption_dedup.docx", ".docx", config)
+        elements = record.document["elements"]
+
+        paragraphs = [e for e in elements if e["type"] == "paragraph"]
+        para_texts = [p["content"]["text"] for p in paragraphs]
+        assert caption_text not in para_texts
+
+        tables = [e for e in elements if e["type"] == "table"]
+        assert tables[0]["content"]["caption"] == caption_text
+
+    def test_long_paragraph_not_removed(self, tmp_path: Path, config: PipelineConfig):
+        """60文字超の段落はキャプションに使用されず、段落として残ること"""
+        from docx import Document as DocxDocument
+
+        doc = DocxDocument()
+        long_text = "この段落は表のキャプションとして使用するには長すぎるテキストです。" * 2
+        doc.add_paragraph(long_text)
+        table = doc.add_table(rows=2, cols=2)
+        table.rows[0].cells[0].text = "A"
+        table.rows[0].cells[1].text = "B"
+        table.rows[1].cells[0].text = "1"
+        table.rows[1].cells[1].text = "2"
+
+        path = tmp_path / "long_para.docx"
+        doc.save(str(path))
+
+        record, _ = extract_docx(path, "long_para.docx", ".docx", config)
+        elements = record.document["elements"]
+
+        paragraphs = [e for e in elements if e["type"] == "paragraph"]
+        assert any(long_text in p["content"]["text"] for p in paragraphs)
+
+        tables = [e for e in elements if e["type"] == "table"]
+        assert tables[0]["content"]["caption"] == ""
+
+    def test_heading_not_removed_as_caption(self, tmp_path: Path, config: PipelineConfig):
+        """見出しはキャプションに使用されず、見出しとして残ること"""
+        from docx import Document as DocxDocument
+
+        doc = DocxDocument()
+        doc.add_heading("セクション見出し", level=2)
+        table = doc.add_table(rows=2, cols=2)
+        table.rows[0].cells[0].text = "A"
+        table.rows[0].cells[1].text = "B"
+        table.rows[1].cells[0].text = "1"
+        table.rows[1].cells[1].text = "2"
+
+        path = tmp_path / "heading_not_caption.docx"
+        doc.save(str(path))
+
+        record, _ = extract_docx(path, "heading_not_caption.docx", ".docx", config)
+        elements = record.document["elements"]
+
+        headings = [e for e in elements if e["type"] == "heading"]
+        assert any("セクション見出し" in h["content"]["text"] for h in headings)
+
+        tables = [e for e in elements if e["type"] == "table"]
+        assert tables[0]["content"]["caption"] == ""
+
+
 class TestErrorHandling:
     """エラーハンドリングテスト"""
 

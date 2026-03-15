@@ -730,6 +730,7 @@ def extract_docx(
                     candidate = last.content.text  # type: ignore[union-attr]
                     if len(candidate) <= 60:
                         caption = candidate
+                        intermediate.elements.pop()
 
             confidence = Confidence.HIGH
             fallback_reason = ""

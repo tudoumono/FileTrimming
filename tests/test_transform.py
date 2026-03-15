@@ -362,6 +362,27 @@ class TestWorkflowRendering:
         assert "1. ステップA" not in md
 
 
+class TestCaptionNoDuplication:
+    """キャプション重複なしの E2E テスト（P5）"""
+
+    def test_caption_appears_once_in_markdown(self):
+        """キャプションが Markdown に 1 回だけ出力されること"""
+        doc = IntermediateDocument()
+        doc.add_table(
+            rows=[
+                [CellData(text="項目", row=0, col=0, is_header=True),
+                 CellData(text="値", row=0, col=1, is_header=True)],
+                [CellData(text="A", row=1, col=0),
+                 CellData(text="1", row=1, col=1)],
+            ],
+            caption="機能一覧表",
+        )
+
+        md = transform_to_markdown(_make_record(doc))
+        assert md.count("機能一覧表") == 1
+        assert "**機能一覧表**" in md
+
+
 class TestOutputFormat:
     def test_no_yaml_frontmatter(self):
         """YAML front matter が含まれないこと (Dify が認識しないため)"""
