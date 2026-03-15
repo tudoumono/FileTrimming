@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections import Counter
 from dataclasses import dataclass, field
@@ -134,6 +135,82 @@ def evaluate_json(json_path: Path) -> FileEvaluation:
         with_text = sum(1 for s in shapes if s["content"].get("texts"))
         ev.add("テキスト付き図形", True, f"{with_text}/{len(shapes)}個")
 
+        workflows = [s for s in shapes if s["content"].get("shape_type") == "workflow"]
+        ev.add("ワークフロー図形", True,
+               f"{len(workflows)}個（{len(workflows)}/{len(shapes)}図形がワークフロー）")
+        for idx, workflow in enumerate(workflows, 1):
+            texts = workflow["content"].get("texts", [])
+            ev.add(f"  ワークフロー{idx}テキスト", len(texts) >= 2,
+                   f"{len(texts)}ステップ" if len(texts) >= 2
+                   else f"テキスト不足（{len(texts)}個）")
+
+    # --- P2: 画像の説明文 ---
+    images = [e for e in elements if e.get("type") == "image"]
+    ev.add("画像抽出", True, f"{len(images)}個")
+    if images:
+        with_desc = sum(1 for img in images if img["content"].get("description"))
+        with_alt = sum(1 for img in images
+                       if img["content"].get("alt_text") and not img["content"].get("description"))
+        bare_images = len(images) - with_desc - with_alt
+        detail_parts = [f"説明あり={with_desc}"]
+        if with_alt:
+            detail_parts.append(f"alt_textのみ={with_alt}")
+        if bare_images:
+            detail_parts.append(f"情報なし={bare_images}")
+        detail = f"{' / '.join(detail_parts)} (全{len(images)}個)"
+        # 元文書にキャプションがない場合は検出不可のため常にpass（情報表示のみ）
+        ev.add("画像説明文", True, detail)
+
+    # --- P4: 見出しレベルと section 番号の整合性 ---
+    _section_re = re.compile(r"^(\d+(?:\.\d+)*)\.?\s")
+    if headings:
+        level_mismatches: list[str] = []
+        for heading in headings:
+            text = heading["content"].get("text", "")
+            level = heading["content"].get("level", 0)
+            match = _section_re.match(text)
+            if match:
+                expected_depth = match.group(1).count(".") + 1
+                expected_level = expected_depth + 1
+                if level < expected_level:
+                    level_mismatches.append(
+                        f"'{text[:30]}' L{level} (期待 L{expected_level})"
+                    )
+        ev.add("見出しレベル整合", len(level_mismatches) == 0,
+               "整合" if not level_mismatches
+               else f"{len(level_mismatches)}件の不整合: {'; '.join(level_mismatches[:3])}")
+
+    # --- P5: キャプション重複チェック ---
+    if tables:
+        para_texts = {
+            e["content"]["text"]
+            for e in elements
+            if e.get("type") == "paragraph"
+        }
+        dup_captions: list[str] = []
+        for table in tables:
+            caption = table["content"].get("caption", "")
+            if caption and caption in para_texts:
+                dup_captions.append(caption[:30])
+        ev.add("キャプション重複なし", len(dup_captions) == 0,
+               "重複なし" if not dup_captions
+               else f"{len(dup_captions)}件の重複: {'; '.join(dup_captions)}")
+
+    # --- P2/P4: 図・表キャプションが見出しになっていないか ---
+    if headings:
+        caption_head_re = re.compile(
+            r"^(?:図|表|Figure|Table)\s*[\d:：]",
+            re.IGNORECASE,
+        )
+        caption_headings = [
+            heading["content"].get("text", "")[:30]
+            for heading in headings
+            if caption_head_re.match(heading["content"].get("text", ""))
+        ]
+        ev.add("キャプション誤見出し化なし", len(caption_headings) == 0,
+               "クリーン" if not caption_headings
+               else f"{len(caption_headings)}件: {'; '.join(caption_headings)}")
+
     # --- 要素の出現順序 ---
     indices = [e.get("source_index", -1) for e in elements]
     is_ordered = indices == sorted(indices)
@@ -186,6 +263,58 @@ def evaluate_markdown(md_path: Path) -> FileEvaluation:
     # --- 図形プレースホルダ ---
     shape_lines = [l for l in lines if l.strip().startswith("[図形")]
     ev.add("図形プレースホルダ", True, f"{len(shape_lines)}個")
+
+    # --- P2: 画像プレースホルダの説明文 ---
+    image_placeholders = [l for l in lines if l.strip().startswith("[画像")]
+    ev.add("画像プレースホルダ", True, f"{len(image_placeholders)}個")
+    if image_placeholders:
+        with_desc = [l for l in image_placeholders if l.strip() != "[画像]"]
+        bare = len(image_placeholders) - len(with_desc)
+        detail = f"説明あり={len(with_desc)} / 情報なし={bare}" if bare else "全て説明あり"
+        # 元文書にキャプションがない場合は検出不可のため常にpass（情報表示のみ）
+        ev.add("画像説明文付き", True, detail)
+
+    # --- P3: フロー図出力 ---
+    flow_lines = [idx for idx, line in enumerate(lines) if line.strip() == "[フロー図]"]
+    ev.add("フロー図", True, f"{len(flow_lines)}個")
+    if flow_lines:
+        flow_with_steps = 0
+        for idx in flow_lines:
+            for next_idx in range(idx + 1, min(idx + 5, len(lines))):
+                if lines[next_idx].strip():
+                    if re.match(r"\s+\d+\.\s", lines[next_idx]):
+                        flow_with_steps += 1
+                    break
+        ev.add("フロー図ステップあり", flow_with_steps == len(flow_lines),
+               f"{flow_with_steps}/{len(flow_lines)}個にステップあり")
+
+    # --- P5: キャプション重複（段落 + 太字キャプション） ---
+    bold_captions: set[str] = set()
+    plain_paragraphs: set[str] = set()
+    bold_re = re.compile(r"^\*\*(.+)\*\*$")
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        match = bold_re.match(stripped)
+        if match:
+            bold_captions.add(match.group(1))
+        elif not stripped.startswith(("#", "[", "  ")):
+            plain_paragraphs.add(stripped)
+
+    dup_in_md = bold_captions & plain_paragraphs
+    ev.add("MD内キャプション重複なし", len(dup_in_md) == 0,
+           "重複なし" if not dup_in_md
+           else f"{len(dup_in_md)}件: {'; '.join(sorted(list(dup_in_md))[:3])}")
+
+    # --- P1: バナー行（表内セクション区切り） ---
+    banner_lines = [
+        line for line in lines
+        if line.strip().startswith("**")
+        and line.strip().endswith("**")
+        and not line.strip().startswith("**#")
+    ]
+    ev.add("バナー行（表内区切り）", True, f"{len(banner_lines)}個")
 
     # --- マーカーがないこと ---
     has_html_comment = any("<!--" in l for l in lines)
@@ -389,7 +518,7 @@ def format_report(report: EvaluationReport, run_id: str = "") -> str:
     if total_fail == 0:
         lines.append("結果: 全チェック通過")
     else:
-        lines.append(f"結果: {total_fail} 件の問題あり — 上記の ✗ を確認してください")
+        lines.append(f"結果: {total_fail} 件の問題あり - 上記の NG を確認してください")
     lines.append("=" * 70)
 
     return "\n".join(lines)
