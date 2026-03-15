@@ -47,6 +47,13 @@ _FIGURE_CAPTION_RE = re.compile(
     r"^(?:図|Fig\.?|Figure)(?=\s*\d|\s*[:：]|\s+)(?:\s*[:：]?\s*)(.+)$",
     re.IGNORECASE,
 )
+_TABLE_CAPTION_RE = re.compile(
+    r"^(?:表|Table)(?=\s*\d|\s*[:：]|\s+)(?:\s*[:：]?\s*)(.+)$",
+    re.IGNORECASE,
+)
+_SECTION_NUMBER_RE = re.compile(
+    r"^(?:第(\d+)章|(\d+(?:\.\d+)*)\.?\s)"
+)
 _ARROW_CHARS = set("→←↑↓⇒⇐⇑⇓▶▷►▸◀◁◄◂➔➡➜➞")
 
 
@@ -90,6 +97,33 @@ def _is_figure_caption(text: str) -> str | None:
     return caption or None
 
 
+def _is_table_caption(text: str) -> str | None:
+    """段落テキストが表キャプションかどうか判定する。"""
+    stripped = text.strip()
+    if not stripped or len(stripped) > 60 or stripped.endswith("。"):
+        return None
+
+    match = _TABLE_CAPTION_RE.match(stripped)
+    if not match:
+        return None
+
+    caption = match.group(1).strip()
+    return caption or None
+
+
+def _detect_section_number_depth(text: str) -> int | None:
+    """テキスト先頭の section 番号から階層深度を検出する。"""
+    match = _SECTION_NUMBER_RE.match(text.strip())
+    if not match:
+        return None
+
+    if match.group(1):
+        return 1
+    if match.group(2):
+        return match.group(2).count(".") + 1
+    return None
+
+
 def _is_arrow_annotation(text: str) -> bool:
     """矢印記号を含む注釈テキスト（フロー図の接続表現）か判定する。"""
     return any(char in _ARROW_CHARS for char in text)
@@ -130,15 +164,19 @@ def _detect_heading(
     # 3. フォントサイズ差（Oasys/Win 対応）
     size = _get_font_size_pt(para)
     if size is not None and size >= config.heading_font_size_min_pt:
-        # サイズに応じてレベルを推定
-        if size >= 16.0:
-            level = 1
-        elif size >= 14.0:
-            level = 2
-        elif size >= 12.0:
-            level = 3
+        depth = _detect_section_number_depth(text)
+        if depth is not None:
+            level = min(depth + 1, 6)
         else:
-            level = 4
+            # サイズに応じてレベルを推定
+            if size >= 16.0:
+                level = 1
+            elif size >= 14.0:
+                level = 2
+            elif size >= 12.0:
+                level = 3
+            else:
+                level = 4
         return (level, f"font_size:{size}pt")
 
     # 4. 短文 + 行末句点なし（見出しらしいパターン）
@@ -146,6 +184,16 @@ def _detect_heading(
         # ただし数字のみ、空白のみは除外
         if re.search(r"[\u3040-\u9fff\uff01-\uff5ea-zA-Z]", text):
             if not _is_arrow_annotation(text):
+                if _is_figure_caption(text) is not None:
+                    return None
+                if _is_table_caption(text) is not None:
+                    return None
+
+                depth = _detect_section_number_depth(text)
+                if depth is not None:
+                    level = min(depth + 1, 6)
+                    return (level, "heuristic:section_number")
+
                 return (3, "heuristic:short_no_period")
 
     return None

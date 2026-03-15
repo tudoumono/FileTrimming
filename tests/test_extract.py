@@ -412,6 +412,106 @@ class TestFlowGrouping:
         ]
 
 
+class TestHeadingPrecision:
+    """見出し検出精度テスト（P4）"""
+
+    def test_section_number_overrides_font_size_level(
+        self, tmp_path: Path, config: PipelineConfig,
+    ):
+        """section 番号で font-size 見出しのレベルが補正されること"""
+        from docx import Document as DocxDocument
+        from docx.shared import Pt
+
+        doc = DocxDocument()
+        doc.add_heading("4. 機能詳細", level=2)
+
+        p1 = doc.add_paragraph()
+        run1 = p1.add_run("4.1 入力チェック機能")
+        run1.font.size = Pt(14)
+        doc.add_paragraph("入力データの妥当性を検証する。")
+
+        p2 = doc.add_paragraph()
+        run2 = p2.add_run("4.2 データ出力機能")
+        run2.font.size = Pt(14)
+
+        path = tmp_path / "section_num.docx"
+        doc.save(str(path))
+
+        record, _ = extract_docx(path, "section_num.docx", ".docx", config)
+        elements = record.document["elements"]
+
+        headings = [e for e in elements if e["type"] == "heading"]
+        h_parent = [h for h in headings if "機能詳細" in h["content"]["text"]]
+        assert h_parent[0]["content"]["level"] == 2
+
+        h_child = [h for h in headings if "入力チェック" in h["content"]["text"]]
+        assert h_child[0]["content"]["level"] == 3
+
+    def test_table_caption_not_heading(self, tmp_path: Path, config: PipelineConfig):
+        """「表N: XXX」パターンがヒューリスティクス見出しにならないこと"""
+        from docx import Document as DocxDocument
+
+        doc = DocxDocument()
+        doc.add_paragraph("表1: ユーザー管理テーブル")
+        table = doc.add_table(rows=2, cols=2)
+        table.rows[0].cells[0].text = "ID"
+        table.rows[0].cells[1].text = "名前"
+        table.rows[1].cells[0].text = "1"
+        table.rows[1].cells[1].text = "田中"
+
+        path = tmp_path / "table_caption.docx"
+        doc.save(str(path))
+
+        record, _ = extract_docx(path, "table_caption.docx", ".docx", config)
+        elements = record.document["elements"]
+
+        headings = [e for e in elements if e["type"] == "heading"]
+        heading_texts = [h["content"]["text"] for h in headings]
+        assert "表1: ユーザー管理テーブル" not in heading_texts
+
+    def test_figure_caption_standalone_not_heading(
+        self, tmp_path: Path, config: PipelineConfig,
+    ):
+        """画像直後でない「図: XXX」もヒューリスティクス見出しにならないこと"""
+        from docx import Document as DocxDocument
+
+        doc = DocxDocument()
+        doc.add_paragraph("前のセクション。")
+        doc.add_paragraph("")
+        doc.add_paragraph("図: 概念図")
+
+        path = tmp_path / "standalone_fig_caption.docx"
+        doc.save(str(path))
+
+        record, _ = extract_docx(
+            path, "standalone_fig_caption.docx", ".docx", config,
+        )
+        elements = record.document["elements"]
+
+        headings = [e for e in elements if e["type"] == "heading"]
+        heading_texts = [h["content"]["text"] for h in headings]
+        assert "図: 概念図" not in heading_texts
+
+    def test_chapter_heading_level(self, tmp_path: Path, config: PipelineConfig):
+        """「第N章」パターンが L2 で検出されること"""
+        from docx import Document as DocxDocument
+
+        doc = DocxDocument()
+        doc.add_paragraph("第1章 システム概要")
+        doc.add_paragraph("本章ではシステムの概要を述べる。")
+
+        path = tmp_path / "chapter.docx"
+        doc.save(str(path))
+
+        record, _ = extract_docx(path, "chapter.docx", ".docx", config)
+        elements = record.document["elements"]
+
+        headings = [e for e in elements if e["type"] == "heading"]
+        h = [heading for heading in headings if "システム概要" in heading["content"]["text"]]
+        assert len(h) == 1
+        assert h[0]["content"]["level"] == 2
+
+
 class TestErrorHandling:
     """エラーハンドリングテスト"""
 
