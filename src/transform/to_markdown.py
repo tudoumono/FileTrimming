@@ -37,21 +37,116 @@ def _render_paragraph(content: dict[str, Any]) -> str:
     return text
 
 
+def _fill_rowspan(rows: list[list[dict[str, Any]]]) -> list[list[dict[str, Any]]]:
+    """rowspan でカバーされている列の値を後続行に展開する。
+
+    Excel の縦結合セル（rowspan > 1）は、元の行にのみセルが存在し、
+    結合先の行にはセルが含まれない。この関数はそれを補完し、
+    各行が全列分のセルを持つようにする。
+
+    例: 「入力系」rowspan=4 → 行1〜4 全てに「入力系」が col=0 として出現
+    """
+    # rowspan フィールドを持つセルがなければ何もしない
+    has_rowspan = any(
+        cell.get("rowspan", 1) > 1
+        for row in rows
+        for cell in row
+    )
+    if not has_rowspan:
+        return rows
+
+    # アクティブな rowspan を追跡: {col: (cell_data, remaining_rows)}
+    active_spans: dict[int, tuple[dict[str, Any], int]] = {}
+    result: list[list[dict[str, Any]]] = []
+
+    for row in rows:
+        # 元の行が完全に空かどうか判定（スペーサー行検出）
+        row_originally_empty = all(not cell.get("text", "") for cell in row)
+
+        # 現在の行に存在する列を記録
+        cols_in_row: set[int] = set()
+        for cell in row:
+            col = cell.get("col", -1)
+            cs = cell.get("colspan", 1)
+            for c in range(col, col + cs):
+                cols_in_row.add(c)
+
+        # アクティブな rowspan から、この行にないセルを補完
+        # ただし元々空のスペーサー行には伝播しない
+        new_row = list(row)
+        for col, (span_cell, remaining) in list(active_spans.items()):
+            if remaining > 0:
+                if not row_originally_empty and col not in cols_in_row:
+                    new_row.append({
+                        "text": span_cell.get("text", ""),
+                        "col": col,
+                        "colspan": span_cell.get("colspan", 1),
+                        "rowspan": 1,
+                        "is_header": span_cell.get("is_header", False),
+                    })
+                active_spans[col] = (span_cell, remaining - 1)
+            elif remaining <= 0:
+                del active_spans[col]
+
+        # 現在の行の rowspan > 1 のセルを追跡開始
+        for cell in row:
+            rs = cell.get("rowspan", 1)
+            if rs > 1:
+                col = cell.get("col", 0)
+                active_spans[col] = (cell, rs - 1)
+
+        # col でソートして行の順序を保持
+        new_row.sort(key=lambda c: c.get("col", 0))
+        result.append(new_row)
+
+    return result
+
+
 def _expand_row_to_positions(row: list[dict[str, Any]]) -> list[tuple[str, int]]:
     """行のセルを列位置に展開する。
+
+    セルの `col` フィールドがある場合はそれを使って正しい列位置に配置する。
+    rowspan で上の行がカバーしている列がある場合、行のセルは途中の列から
+    始まるため、col フィールドなしでは位置がずれる。
 
     Returns:
         [(text, colspan), ...] — 各列位置のテキストと元の colspan
     """
-    positions: list[tuple[str, int]] = []
-    for cell in row:
-        text = cell.get("text", "")
-        cs = cell.get("colspan", 1)
-        positions.append((text, cs))
-        # colspan > 1 の場合、残りの位置は同じテキストで埋める
-        for _ in range(cs - 1):
-            positions.append((text, 0))  # 0 = 展開済み位置
-    return positions
+    # col フィールドがあるか確認
+    has_col = any("col" in cell for cell in row)
+
+    if has_col:
+        # col フィールドを使って正しい列位置に配置
+        # まず必要な配列サイズを計算
+        max_pos = 0
+        for cell in row:
+            col = cell.get("col", 0)
+            cs = cell.get("colspan", 1)
+            end = col + cs
+            if end > max_pos:
+                max_pos = end
+
+        positions: list[tuple[str, int]] = [("", 0)] * max_pos
+        for cell in row:
+            text = cell.get("text", "")
+            col = cell.get("col", 0)
+            cs = cell.get("colspan", 1)
+            if col < max_pos:
+                positions[col] = (text, cs)
+                for offset in range(1, cs):
+                    if col + offset < max_pos:
+                        positions[col + offset] = (text, 0)
+        return positions
+    else:
+        # col フィールドなし: 従来のシーケンシャル展開
+        positions = []
+        for cell in row:
+            text = cell.get("text", "")
+            cs = cell.get("colspan", 1)
+            positions.append((text, cs))
+            for _ in range(cs - 1):
+                positions.append((text, 0))
+        return positions
 
 
 def _is_empty_row(row: list[dict[str, Any]]) -> bool:
@@ -317,6 +412,100 @@ def _render_pre_header_rows(
     return lines
 
 
+def _detect_active_columns(
+    rows: list[list[dict[str, Any]]], data_start: int, total_cols: int,
+) -> list[int]:
+    """データ行で一貫してデータが入っている列を検出する。
+
+    「アクティブ」= データ行の 50% 以上で非空のセルがある列。
+    キーバリュー型テーブル（広い表だが2列程度しか使われていない）の検出に使用。
+    """
+    col_fill_count = [0] * total_cols
+    data_row_count = 0
+    for row in rows[data_start:]:
+        if _is_empty_row(row):
+            continue
+        positions = _expand_row_to_positions(row)
+        if _is_banner_row(row, len(positions)):
+            continue
+        if _is_section_header_row(row, total_cols):
+            continue
+        data_row_count += 1
+        for i, (text, cs) in enumerate(positions):
+            if text and cs > 0 and i < total_cols:
+                col_fill_count[i] += 1
+    if data_row_count == 0:
+        return list(range(total_cols))
+    threshold = data_row_count * 0.5
+    return [i for i, count in enumerate(col_fill_count) if count >= threshold]
+
+
+def _render_key_value_table(
+    rows: list[list[dict[str, Any]]],
+    labels: list[str],
+    data_start: int,
+    total_cols: int,
+    active_cols: list[int],
+) -> str:
+    """キーバリュー型テーブルを出力する。
+
+    広い表（6列等）だが実際にデータがあるのは2列程度のパターン。
+    第1アクティブ列の値をキー、第2アクティブ列の値をバリューとして出力する。
+    それ以外の列にデータがある場合はヘッダーラベル付きで追加出力する。
+    """
+    lines: list[str] = []
+
+    # ヘッダーより前の行を出力
+    lines.extend(_render_pre_header_rows(rows, data_start, total_cols))
+
+    key_col = active_cols[0]
+    val_col = active_cols[1]
+
+    for row in rows[data_start:]:
+        if _is_empty_row(row):
+            continue
+
+        positions = _expand_row_to_positions(row)
+
+        if _is_banner_row(row, len(positions)):
+            banner_text = row[0].get("text", "")
+            if banner_text:
+                lines.append(f"**{banner_text}**")
+                lines.append("")
+            continue
+
+        if _is_section_header_row(row, total_cols):
+            text = _get_section_header_text(row, total_cols)
+            if text:
+                lines.append(f"**{text}**")
+                lines.append("")
+            continue
+
+        # キーとバリューを取得
+        key = positions[key_col][0] if key_col < len(positions) else ""
+        val = positions[val_col][0] if val_col < len(positions) else ""
+
+        if key and val:
+            lines.append(f"{key}: {val}")
+        elif key:
+            lines.append(key)
+        elif val:
+            lines.append(val)
+        else:
+            continue
+
+        # アクティブ2列以外の非空列をヘッダーラベル付きで追加
+        for i, (text, cs) in enumerate(positions):
+            if i in (key_col, val_col) or not text or cs == 0:
+                continue
+            label = labels[i] if i < len(labels) else f"列{i+1}"
+            lines.append(f"  {label}: {text}")
+
+        lines.append("")
+
+    return "\n".join(lines)
+
+
 def _render_data_table(
     rows: list[list[dict[str, Any]]],
     labels: list[str],
@@ -425,6 +614,9 @@ def _render_table_as_labeled_text(content: dict[str, Any]) -> str:
     if not rows:
         return ""
 
+    # rowspan で縦結合されたセルの値を後続行に展開
+    rows = _fill_rowspan(rows)
+
     lines: list[str] = []
 
     caption = content.get("caption", "")
@@ -434,15 +626,23 @@ def _render_table_as_labeled_text(content: dict[str, Any]) -> str:
 
     total_cols = _estimate_total_cols(rows)
 
-    # テーブル型判定: フォーム型 vs データテーブル型
+    # テーブル型判定: フォーム型 vs キーバリュー型 vs データテーブル型
     if _is_form_grid_table(rows, total_cols):
         # フォーム型: 全行をラベル-値ペアとして出力
         lines.append(_render_form_grid(rows, total_cols))
     else:
         # データテーブル型（混在型含む）
-        labels, data_start, _ = _build_column_labels(rows, total_cols)
+        labels, data_start, header_found = _build_column_labels(rows, total_cols)
         effective_cols = len(labels) if labels else total_cols
-        lines.append(_render_data_table(rows, labels, data_start, effective_cols))
+
+        # キーバリュー型判定: 広い表だが実データは2列程度のみ
+        active_cols = _detect_active_columns(rows, data_start, total_cols)
+        if header_found and len(active_cols) >= 2 and len(active_cols) <= total_cols // 2:
+            lines.append(_render_key_value_table(
+                rows, labels, data_start, total_cols, active_cols,
+            ))
+        else:
+            lines.append(_render_data_table(rows, labels, data_start, effective_cols))
 
     return "\n".join(lines)
 
