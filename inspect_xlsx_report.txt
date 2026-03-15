@@ -1,0 +1,148 @@
+============================================================
+xlsx 詳細調査結果
+============================================================
+
+■ 全体サマリー
+
+  ファイル数: 17件
+  シート数合計: 43
+  非表示シート数: 2
+  保護シート数: 2
+
+■ シート構造分析
+
+  大きなシート（100行超 or 20列超）: 2件
+    - large_workbook.xlsx / 取引明細: 4001行×12列 (空率0%)
+    - timesheet_calendar.xlsx / 2026年04月勤怠: 12行×37列 (空率44%)
+  空率が高いシート（80%以上）: 6件
+    - approval_request.xlsx / 稟議申請: 空率96%、grid_lines_visible=False
+    - excel_form_grid.xlsx / 業務変更申請: 空率97%、grid_lines_visible=False
+    - excel_form_grid.xlsx / 記入例: 空率96%、grid_lines_visible=False
+    - many_images.xlsx / 画面一覧: 空率98%、grid_lines_visible=True
+    - mixed_complex.xlsx / フロー: 空率96%、grid_lines_visible=True
+    - multiple_tables_sheet.xlsx / 右寄せ配置: 空率91%、grid_lines_visible=True
+
+■ 結合セル分析
+
+  結合セルを含むシート数: 25
+  結合セル合計数: 120
+  結合パターンのサンプル:
+    - approval_request.xlsx / 稟議申請 / E25:N25
+    - approval_request.xlsx / 稟議申請 / B7:D8
+    - approval_request.xlsx / 稟議申請 / B29:D31
+    - change_history.xlsx / 変更履歴 / A9:D9
+    - change_history.xlsx / 設計概要 / A8:B8
+    - comments_and_annotations.xlsx / 色分け一覧 / A1:D1
+    - excel_form_grid.xlsx / 業務変更申請 / E9:O10
+    - excel_form_grid.xlsx / 業務変更申請 / B19:D24
+    - excel_form_grid.xlsx / 業務変更申請 / E32:O36
+    - excel_form_grid.xlsx / 記入例 / B13:C14
+
+■ 数式分析
+
+  数式を含むシート数: 7
+  数式セル合計数: 144
+    - formulas_and_formats.xlsx / 売上集計: 66セル
+    - formulas_and_formats.xlsx / KPI: 8セル
+    - invoice_print_layout.xlsx / 請求書: 11セル
+    - ledger_with_sections.xlsx / 取引台帳: 1セル
+    - mixed_complex.xlsx / 設定: 4セル
+    - protected_master_validation.xlsx / 照会: 12セル
+    - timesheet_calendar.xlsx / 2026年04月勤怠: 42セル
+
+■ コメント・注釈
+
+  コメントを含むシート数: 4
+  コメント合計数: 7
+  サンプル:
+    - comments_and_annotations.xlsx / レビュー管理 / D2: 顧客ID の補足仕様。外部IFとの整合確認が必要。
+    - comments_and_annotations.xlsx / レビュー管理 / D3: 契約日 の補足仕様。外部IFとの整合確認が必要。
+    - comments_and_annotations.xlsx / レビュー管理 / D4: 利用料金 の補足仕様。外部IFとの整合確認が必要。
+    - comments_and_annotations.xlsx / レビュー管理 / D5: ステータス の補足仕様。外部IFとの整合確認が必要。
+    - comments_and_annotations.xlsx / 色分け一覧 / B6: 色だけでなくラベルも保持したい。
+    - mixed_complex.xlsx / 概要 / D4: 構造保持と Markdown 化の両方を見る。
+    - wareki_and_normalization.xlsx / 正規化観点 / B5: ㈱、①、№ の扱いを比較する。
+
+■ 書式パターン
+
+  number_format の出現パターン:
+    - General (その他): 33763セル
+    - #,##0 (数値): 12072セル
+    - yyyy/mm/dd (日付): 4046セル
+    - "¥"#,##0 (通貨): 79セル
+    - 0.0% (パーセント): 17セル
+    - 0% (パーセント): 3セル
+    - [$-411]ggge"年"m"月"d"日" (和暦/日付): 3セル
+    - 000000 (数値): 1セル
+  色の使用パターン:
+    - 00000000: 49395セル
+    - 00D9E2F3: 227セル
+    - 00E2F0D9: 161セル
+    - 00FFF2CC: 160セル
+    - 00FCE4D6: 41セル
+
+■ データ保護
+
+  シート保護: 2件
+    - protected_master_validation.xlsx / 入力シート
+    - protected_master_validation.xlsx / マスタ
+  非表示シート: 2件
+    - mixed_complex.xlsx / マスタ
+    - protected_master_validation.xlsx / マスタ
+  名前定義:
+    - protected_master_validation.xlsx / workbook / StatusList -> 'マスタ'!$A$2:$A$5
+    - protected_master_validation.xlsx / workbook / DivisionList -> 'マスタ'!$B$2:$B$4
+    - protected_master_validation.xlsx / workbook / CategoryList -> 'マスタ'!$C$2:$C$4
+  入力規則を含むシート:
+    - comments_and_annotations.xlsx / レビュー管理: 1件
+    - mixed_complex.xlsx / 機能一覧: 1件
+    - protected_master_validation.xlsx / 入力シート: 3件
+
+■ 印刷設定
+
+  - invoice_print_layout.xlsx / 請求書: print_area='請求書'!$A$1:$H$33, rows=$1:$11, cols=None
+  - invoice_print_layout.xlsx / 明細別紙: print_area='明細別紙'!$A$1:$F$10, rows=None, cols=None
+
+■ レイアウト推定
+
+  data_table: 13ファイル
+  unknown: 2ファイル
+  form_grid: 1ファイル
+  mixed: 1ファイル
+
+■ Excel Table オブジェクト
+
+  Table を含むシート数: 26
+    - approval_request.xlsx / 添付一覧: AttachmentTable
+    - change_history.xlsx / 変更履歴: ChangeHistoryTable
+    - change_history.xlsx / 設計概要: SummaryTable
+    - comments_and_annotations.xlsx / レビュー管理: ReviewTable
+    - comments_and_annotations.xlsx / 色分け一覧: PaletteTable
+    - formulas_and_formats.xlsx / KPI: KpiTable
+    - invoice_print_layout.xlsx / 明細別紙: InvoiceAttachmentTable
+    - large_workbook.xlsx / 月次集計: MonthlySummaryTable
+    - many_images.xlsx / アイコン一覧: IconTable
+    - many_tables.xlsx / ユーザー管理: UserTable
+
+■ アウトライン・フィルタ
+
+  行列グループ化を含むシート: 2
+    - outline_and_filter.xlsx / 工程一覧: row_outline=True, col_outline=True
+    - outline_and_filter.xlsx / 月次集計: row_outline=True, col_outline=False
+  フィルタ設定を含むシート: 3
+    - formulas_and_formats.xlsx / 売上集計: A1:J13
+    - large_workbook.xlsx / 取引明細: A1:L4001
+    - outline_and_filter.xlsx / 工程一覧: A1:I10
+
+■ 画像
+
+  画像を含むシート数: 5
+  画像合計数: 12
+    - approval_request.xlsx / 稟議申請: 3件
+    - invoice_print_layout.xlsx / 請求書: 1件
+    - many_images.xlsx / 画面一覧: 4件
+    - many_images.xlsx / アイコン一覧: 3件
+    - mixed_complex.xlsx / フロー: 1件
+
+============================================================
+以上

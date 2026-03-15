@@ -1,0 +1,2592 @@
+{
+  "summary": {
+    "total_files": 26,
+    "total_size_bytes": 26844349,
+    "by_category": {
+      "Excel": {
+        "count": 17,
+        "total_size_bytes": 460709,
+        "max_size_bytes": 299050,
+        "min_size_bytes": 7420
+      },
+      "Word": {
+        "count": 9,
+        "total_size_bytes": 26383640,
+        "max_size_bytes": 26072650,
+        "min_size_bytes": 37237
+      }
+    },
+    "by_extension": {
+      ".docx": {
+        "count": 9,
+        "total_size_bytes": 26383640,
+        "max_size_bytes": 26072650
+      },
+      ".xlsx": {
+        "count": 17,
+        "total_size_bytes": 460709,
+        "max_size_bytes": 299050
+      }
+    },
+    "files_over_15mb": [
+      "large_document.docx"
+    ],
+    "files_over_15mb_count": 1,
+    "errors": [],
+    "error_count": 0
+  },
+  "files": [
+    {
+      "path": "approval_request.xlsx",
+      "extension": ".xlsx",
+      "size_bytes": 11825,
+      "category": "Excel",
+      "heading_count": null,
+      "heading_max_level": null,
+      "headings": null,
+      "first_heading": null,
+      "paragraph_count": null,
+      "char_count": null,
+      "table_count": null,
+      "tables": null,
+      "shape_count": null,
+      "inline_shape_count": null,
+      "sheet_count": 2,
+      "sheets": [
+        {
+          "name": "稟議申請",
+          "rows": 33,
+          "cols": 15,
+          "non_empty_cells": 21,
+          "total_cells": 495,
+          "empty_ratio": 0.9576
+        },
+        {
+          "name": "添付一覧",
+          "rows": 4,
+          "cols": 4,
+          "non_empty_cells": 16,
+          "total_cells": 16,
+          "empty_ratio": 0.0
+        }
+      ],
+      "hidden_sheet_count": 0,
+      "protected_sheet_count": 0,
+      "total_merged_cells": 21,
+      "total_tables": 1,
+      "total_images": 3,
+      "total_formulas": 0,
+      "total_comments": 0,
+      "has_named_ranges": false,
+      "named_range_count": 0,
+      "has_data_validation": false,
+      "has_conditional_formatting": false,
+      "has_print_settings": false,
+      "has_outline": false,
+      "has_auto_filter": false,
+      "estimated_layout_type": "data_table",
+      "error": null
+    },
+    {
+      "path": "change_history.docx",
+      "extension": ".docx",
+      "size_bytes": 37237,
+      "category": "Word",
+      "heading_count": 3,
+      "heading_max_level": 2,
+      "headings": [
+        {
+          "level": 1,
+          "text": "システム設計書"
+        },
+        {
+          "level": 2,
+          "text": "1. 設計方針"
+        },
+        {
+          "level": 2,
+          "text": "2. コンポーネント設計"
+        }
+      ],
+      "first_heading": "システム設計書",
+      "paragraph_count": 8,
+      "char_count": 86,
+      "table_count": 2,
+      "tables": [
+        {
+          "rows": 3,
+          "cols": 2,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 5,
+          "cols": 4,
+          "has_merged_cells": false
+        }
+      ],
+      "shape_count": 0,
+      "inline_shape_count": 0,
+      "sheet_count": null,
+      "sheets": null,
+      "hidden_sheet_count": null,
+      "protected_sheet_count": null,
+      "total_merged_cells": null,
+      "total_tables": null,
+      "total_images": null,
+      "total_formulas": null,
+      "total_comments": null,
+      "has_named_ranges": null,
+      "named_range_count": null,
+      "has_data_validation": null,
+      "has_conditional_formatting": null,
+      "has_print_settings": null,
+      "has_outline": null,
+      "has_auto_filter": null,
+      "estimated_layout_type": null,
+      "error": null
+    },
+    {
+      "path": "change_history.xlsx",
+      "extension": ".xlsx",
+      "size_bytes": 7922,
+      "category": "Excel",
+      "heading_count": null,
+      "heading_max_level": null,
+      "headings": null,
+      "first_heading": null,
+      "paragraph_count": null,
+      "char_count": null,
+      "table_count": null,
+      "tables": null,
+      "shape_count": null,
+      "inline_shape_count": null,
+      "sheet_count": 2,
+      "sheets": [
+        {
+          "name": "変更履歴",
+          "rows": 9,
+          "cols": 4,
+          "non_empty_cells": 25,
+          "total_cells": 36,
+          "empty_ratio": 0.3056
+        },
+        {
+          "name": "設計概要",
+          "rows": 8,
+          "cols": 2,
+          "non_empty_cells": 11,
+          "total_cells": 16,
+          "empty_ratio": 0.3125
+        }
+      ],
+      "hidden_sheet_count": 0,
+      "protected_sheet_count": 0,
+      "total_merged_cells": 2,
+      "total_tables": 2,
+      "total_images": 0,
+      "total_formulas": 0,
+      "total_comments": 0,
+      "has_named_ranges": false,
+      "named_range_count": 0,
+      "has_data_validation": false,
+      "has_conditional_formatting": false,
+      "has_print_settings": false,
+      "has_outline": false,
+      "has_auto_filter": false,
+      "estimated_layout_type": "data_table",
+      "error": null
+    },
+    {
+      "path": "comments_and_annotations.xlsx",
+      "extension": ".xlsx",
+      "size_bytes": 10688,
+      "category": "Excel",
+      "heading_count": null,
+      "heading_max_level": null,
+      "headings": null,
+      "first_heading": null,
+      "paragraph_count": null,
+      "char_count": null,
+      "table_count": null,
+      "tables": null,
+      "shape_count": null,
+      "inline_shape_count": null,
+      "sheet_count": 2,
+      "sheets": [
+        {
+          "name": "レビュー管理",
+          "rows": 5,
+          "cols": 8,
+          "non_empty_cells": 32,
+          "total_cells": 40,
+          "empty_ratio": 0.2
+        },
+        {
+          "name": "色分け一覧",
+          "rows": 6,
+          "cols": 4,
+          "non_empty_cells": 17,
+          "total_cells": 24,
+          "empty_ratio": 0.2917
+        }
+      ],
+      "hidden_sheet_count": 0,
+      "protected_sheet_count": 0,
+      "total_merged_cells": 1,
+      "total_tables": 2,
+      "total_images": 0,
+      "total_formulas": 0,
+      "total_comments": 5,
+      "has_named_ranges": false,
+      "named_range_count": 0,
+      "has_data_validation": true,
+      "has_conditional_formatting": false,
+      "has_print_settings": false,
+      "has_outline": false,
+      "has_auto_filter": false,
+      "estimated_layout_type": "data_table",
+      "error": null
+    },
+    {
+      "path": "excel_form_grid.xlsx",
+      "extension": ".xlsx",
+      "size_bytes": 9542,
+      "category": "Excel",
+      "heading_count": null,
+      "heading_max_level": null,
+      "headings": null,
+      "first_heading": null,
+      "paragraph_count": null,
+      "char_count": null,
+      "table_count": null,
+      "tables": null,
+      "shape_count": null,
+      "inline_shape_count": null,
+      "sheet_count": 2,
+      "sheets": [
+        {
+          "name": "業務変更申請",
+          "rows": 40,
+          "cols": 16,
+          "non_empty_cells": 20,
+          "total_cells": 640,
+          "empty_ratio": 0.9688
+        },
+        {
+          "name": "記入例",
+          "rows": 25,
+          "cols": 12,
+          "non_empty_cells": 11,
+          "total_cells": 300,
+          "empty_ratio": 0.9633
+        }
+      ],
+      "hidden_sheet_count": 0,
+      "protected_sheet_count": 0,
+      "total_merged_cells": 31,
+      "total_tables": 0,
+      "total_images": 0,
+      "total_formulas": 0,
+      "total_comments": 0,
+      "has_named_ranges": false,
+      "named_range_count": 0,
+      "has_data_validation": false,
+      "has_conditional_formatting": false,
+      "has_print_settings": false,
+      "has_outline": false,
+      "has_auto_filter": false,
+      "estimated_layout_type": "form_grid",
+      "error": null
+    },
+    {
+      "path": "formulas_and_formats.xlsx",
+      "extension": ".xlsx",
+      "size_bytes": 8336,
+      "category": "Excel",
+      "heading_count": null,
+      "heading_max_level": null,
+      "headings": null,
+      "first_heading": null,
+      "paragraph_count": null,
+      "char_count": null,
+      "table_count": null,
+      "tables": null,
+      "shape_count": null,
+      "inline_shape_count": null,
+      "sheet_count": 2,
+      "sheets": [
+        {
+          "name": "売上集計",
+          "rows": 15,
+          "cols": 10,
+          "non_empty_cells": 137,
+          "total_cells": 150,
+          "empty_ratio": 0.0867
+        },
+        {
+          "name": "KPI",
+          "rows": 5,
+          "cols": 7,
+          "non_empty_cells": 27,
+          "total_cells": 35,
+          "empty_ratio": 0.2286
+        }
+      ],
+      "hidden_sheet_count": 0,
+      "protected_sheet_count": 0,
+      "total_merged_cells": 0,
+      "total_tables": 1,
+      "total_images": 0,
+      "total_formulas": 74,
+      "total_comments": 0,
+      "has_named_ranges": false,
+      "named_range_count": 0,
+      "has_data_validation": false,
+      "has_conditional_formatting": true,
+      "has_print_settings": false,
+      "has_outline": false,
+      "has_auto_filter": true,
+      "estimated_layout_type": "data_table",
+      "error": null
+    },
+    {
+      "path": "invoice_print_layout.xlsx",
+      "extension": ".xlsx",
+      "size_bytes": 10563,
+      "category": "Excel",
+      "heading_count": null,
+      "heading_max_level": null,
+      "headings": null,
+      "first_heading": null,
+      "paragraph_count": null,
+      "char_count": null,
+      "table_count": null,
+      "tables": null,
+      "shape_count": null,
+      "inline_shape_count": null,
+      "sheet_count": 2,
+      "sheets": [
+        {
+          "name": "請求書",
+          "rows": 33,
+          "cols": 8,
+          "non_empty_cells": 56,
+          "total_cells": 264,
+          "empty_ratio": 0.7879
+        },
+        {
+          "name": "明細別紙",
+          "rows": 4,
+          "cols": 6,
+          "non_empty_cells": 24,
+          "total_cells": 24,
+          "empty_ratio": 0.0
+        }
+      ],
+      "hidden_sheet_count": 0,
+      "protected_sheet_count": 0,
+      "total_merged_cells": 16,
+      "total_tables": 1,
+      "total_images": 1,
+      "total_formulas": 11,
+      "total_comments": 0,
+      "has_named_ranges": false,
+      "named_range_count": 0,
+      "has_data_validation": false,
+      "has_conditional_formatting": false,
+      "has_print_settings": true,
+      "has_outline": false,
+      "has_auto_filter": false,
+      "estimated_layout_type": "mixed",
+      "error": null
+    },
+    {
+      "path": "large_document.docx",
+      "extension": ".docx",
+      "size_bytes": 26072650,
+      "category": "Word",
+      "heading_count": 121,
+      "heading_max_level": 3,
+      "headings": [
+        {
+          "level": 1,
+          "text": "大規模仕様書（分割テスト用）"
+        },
+        {
+          "level": 2,
+          "text": "第1章 機能1"
+        },
+        {
+          "level": 3,
+          "text": "1.1 サブ機能1"
+        },
+        {
+          "level": 3,
+          "text": "1.2 サブ機能2"
+        },
+        {
+          "level": 3,
+          "text": "1.3 サブ機能3"
+        },
+        {
+          "level": 3,
+          "text": "1.4 サブ機能4"
+        },
+        {
+          "level": 3,
+          "text": "1.5 サブ機能5"
+        },
+        {
+          "level": 2,
+          "text": "第2章 機能2"
+        },
+        {
+          "level": 3,
+          "text": "2.1 サブ機能1"
+        },
+        {
+          "level": 3,
+          "text": "2.2 サブ機能2"
+        },
+        {
+          "level": 3,
+          "text": "2.3 サブ機能3"
+        },
+        {
+          "level": 3,
+          "text": "2.4 サブ機能4"
+        },
+        {
+          "level": 3,
+          "text": "2.5 サブ機能5"
+        },
+        {
+          "level": 2,
+          "text": "第3章 機能3"
+        },
+        {
+          "level": 3,
+          "text": "3.1 サブ機能1"
+        },
+        {
+          "level": 3,
+          "text": "3.2 サブ機能2"
+        },
+        {
+          "level": 3,
+          "text": "3.3 サブ機能3"
+        },
+        {
+          "level": 3,
+          "text": "3.4 サブ機能4"
+        },
+        {
+          "level": 3,
+          "text": "3.5 サブ機能5"
+        },
+        {
+          "level": 2,
+          "text": "第4章 機能4"
+        },
+        {
+          "level": 3,
+          "text": "4.1 サブ機能1"
+        },
+        {
+          "level": 3,
+          "text": "4.2 サブ機能2"
+        },
+        {
+          "level": 3,
+          "text": "4.3 サブ機能3"
+        },
+        {
+          "level": 3,
+          "text": "4.4 サブ機能4"
+        },
+        {
+          "level": 3,
+          "text": "4.5 サブ機能5"
+        },
+        {
+          "level": 2,
+          "text": "第5章 機能5"
+        },
+        {
+          "level": 3,
+          "text": "5.1 サブ機能1"
+        },
+        {
+          "level": 3,
+          "text": "5.2 サブ機能2"
+        },
+        {
+          "level": 3,
+          "text": "5.3 サブ機能3"
+        },
+        {
+          "level": 3,
+          "text": "5.4 サブ機能4"
+        },
+        {
+          "level": 3,
+          "text": "5.5 サブ機能5"
+        },
+        {
+          "level": 2,
+          "text": "第6章 機能6"
+        },
+        {
+          "level": 3,
+          "text": "6.1 サブ機能1"
+        },
+        {
+          "level": 3,
+          "text": "6.2 サブ機能2"
+        },
+        {
+          "level": 3,
+          "text": "6.3 サブ機能3"
+        },
+        {
+          "level": 3,
+          "text": "6.4 サブ機能4"
+        },
+        {
+          "level": 3,
+          "text": "6.5 サブ機能5"
+        },
+        {
+          "level": 2,
+          "text": "第7章 機能7"
+        },
+        {
+          "level": 3,
+          "text": "7.1 サブ機能1"
+        },
+        {
+          "level": 3,
+          "text": "7.2 サブ機能2"
+        },
+        {
+          "level": 3,
+          "text": "7.3 サブ機能3"
+        },
+        {
+          "level": 3,
+          "text": "7.4 サブ機能4"
+        },
+        {
+          "level": 3,
+          "text": "7.5 サブ機能5"
+        },
+        {
+          "level": 2,
+          "text": "第8章 機能8"
+        },
+        {
+          "level": 3,
+          "text": "8.1 サブ機能1"
+        },
+        {
+          "level": 3,
+          "text": "8.2 サブ機能2"
+        },
+        {
+          "level": 3,
+          "text": "8.3 サブ機能3"
+        },
+        {
+          "level": 3,
+          "text": "8.4 サブ機能4"
+        },
+        {
+          "level": 3,
+          "text": "8.5 サブ機能5"
+        },
+        {
+          "level": 2,
+          "text": "第9章 機能9"
+        },
+        {
+          "level": 3,
+          "text": "9.1 サブ機能1"
+        },
+        {
+          "level": 3,
+          "text": "9.2 サブ機能2"
+        },
+        {
+          "level": 3,
+          "text": "9.3 サブ機能3"
+        },
+        {
+          "level": 3,
+          "text": "9.4 サブ機能4"
+        },
+        {
+          "level": 3,
+          "text": "9.5 サブ機能5"
+        },
+        {
+          "level": 2,
+          "text": "第10章 機能10"
+        },
+        {
+          "level": 3,
+          "text": "10.1 サブ機能1"
+        },
+        {
+          "level": 3,
+          "text": "10.2 サブ機能2"
+        },
+        {
+          "level": 3,
+          "text": "10.3 サブ機能3"
+        },
+        {
+          "level": 3,
+          "text": "10.4 サブ機能4"
+        },
+        {
+          "level": 3,
+          "text": "10.5 サブ機能5"
+        },
+        {
+          "level": 2,
+          "text": "第11章 機能11"
+        },
+        {
+          "level": 3,
+          "text": "11.1 サブ機能1"
+        },
+        {
+          "level": 3,
+          "text": "11.2 サブ機能2"
+        },
+        {
+          "level": 3,
+          "text": "11.3 サブ機能3"
+        },
+        {
+          "level": 3,
+          "text": "11.4 サブ機能4"
+        },
+        {
+          "level": 3,
+          "text": "11.5 サブ機能5"
+        },
+        {
+          "level": 2,
+          "text": "第12章 機能12"
+        },
+        {
+          "level": 3,
+          "text": "12.1 サブ機能1"
+        },
+        {
+          "level": 3,
+          "text": "12.2 サブ機能2"
+        },
+        {
+          "level": 3,
+          "text": "12.3 サブ機能3"
+        },
+        {
+          "level": 3,
+          "text": "12.4 サブ機能4"
+        },
+        {
+          "level": 3,
+          "text": "12.5 サブ機能5"
+        },
+        {
+          "level": 2,
+          "text": "第13章 機能13"
+        },
+        {
+          "level": 3,
+          "text": "13.1 サブ機能1"
+        },
+        {
+          "level": 3,
+          "text": "13.2 サブ機能2"
+        },
+        {
+          "level": 3,
+          "text": "13.3 サブ機能3"
+        },
+        {
+          "level": 3,
+          "text": "13.4 サブ機能4"
+        },
+        {
+          "level": 3,
+          "text": "13.5 サブ機能5"
+        },
+        {
+          "level": 2,
+          "text": "第14章 機能14"
+        },
+        {
+          "level": 3,
+          "text": "14.1 サブ機能1"
+        },
+        {
+          "level": 3,
+          "text": "14.2 サブ機能2"
+        },
+        {
+          "level": 3,
+          "text": "14.3 サブ機能3"
+        },
+        {
+          "level": 3,
+          "text": "14.4 サブ機能4"
+        },
+        {
+          "level": 3,
+          "text": "14.5 サブ機能5"
+        },
+        {
+          "level": 2,
+          "text": "第15章 機能15"
+        },
+        {
+          "level": 3,
+          "text": "15.1 サブ機能1"
+        },
+        {
+          "level": 3,
+          "text": "15.2 サブ機能2"
+        },
+        {
+          "level": 3,
+          "text": "15.3 サブ機能3"
+        },
+        {
+          "level": 3,
+          "text": "15.4 サブ機能4"
+        },
+        {
+          "level": 3,
+          "text": "15.5 サブ機能5"
+        },
+        {
+          "level": 2,
+          "text": "第16章 機能16"
+        },
+        {
+          "level": 3,
+          "text": "16.1 サブ機能1"
+        },
+        {
+          "level": 3,
+          "text": "16.2 サブ機能2"
+        },
+        {
+          "level": 3,
+          "text": "16.3 サブ機能3"
+        },
+        {
+          "level": 3,
+          "text": "16.4 サブ機能4"
+        },
+        {
+          "level": 3,
+          "text": "16.5 サブ機能5"
+        },
+        {
+          "level": 2,
+          "text": "第17章 機能17"
+        },
+        {
+          "level": 3,
+          "text": "17.1 サブ機能1"
+        },
+        {
+          "level": 3,
+          "text": "17.2 サブ機能2"
+        },
+        {
+          "level": 3,
+          "text": "17.3 サブ機能3"
+        },
+        {
+          "level": 3,
+          "text": "17.4 サブ機能4"
+        },
+        {
+          "level": 3,
+          "text": "17.5 サブ機能5"
+        },
+        {
+          "level": 2,
+          "text": "第18章 機能18"
+        },
+        {
+          "level": 3,
+          "text": "18.1 サブ機能1"
+        },
+        {
+          "level": 3,
+          "text": "18.2 サブ機能2"
+        },
+        {
+          "level": 3,
+          "text": "18.3 サブ機能3"
+        },
+        {
+          "level": 3,
+          "text": "18.4 サブ機能4"
+        },
+        {
+          "level": 3,
+          "text": "18.5 サブ機能5"
+        },
+        {
+          "level": 2,
+          "text": "第19章 機能19"
+        },
+        {
+          "level": 3,
+          "text": "19.1 サブ機能1"
+        },
+        {
+          "level": 3,
+          "text": "19.2 サブ機能2"
+        },
+        {
+          "level": 3,
+          "text": "19.3 サブ機能3"
+        },
+        {
+          "level": 3,
+          "text": "19.4 サブ機能4"
+        },
+        {
+          "level": 3,
+          "text": "19.5 サブ機能5"
+        },
+        {
+          "level": 2,
+          "text": "第20章 機能20"
+        },
+        {
+          "level": 3,
+          "text": "20.1 サブ機能1"
+        },
+        {
+          "level": 3,
+          "text": "20.2 サブ機能2"
+        },
+        {
+          "level": 3,
+          "text": "20.3 サブ機能3"
+        },
+        {
+          "level": 3,
+          "text": "20.4 サブ機能4"
+        },
+        {
+          "level": 3,
+          "text": "20.5 サブ機能5"
+        }
+      ],
+      "first_heading": "大規模仕様書（分割テスト用）",
+      "paragraph_count": 261,
+      "char_count": 28786,
+      "table_count": 100,
+      "tables": [
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        }
+      ],
+      "shape_count": 0,
+      "inline_shape_count": 20,
+      "sheet_count": null,
+      "sheets": null,
+      "hidden_sheet_count": null,
+      "protected_sheet_count": null,
+      "total_merged_cells": null,
+      "total_tables": null,
+      "total_images": null,
+      "total_formulas": null,
+      "total_comments": null,
+      "has_named_ranges": null,
+      "named_range_count": null,
+      "has_data_validation": null,
+      "has_conditional_formatting": null,
+      "has_print_settings": null,
+      "has_outline": null,
+      "has_auto_filter": null,
+      "estimated_layout_type": null,
+      "error": null
+    },
+    {
+      "path": "large_workbook.xlsx",
+      "extension": ".xlsx",
+      "size_bytes": 299050,
+      "category": "Excel",
+      "heading_count": null,
+      "heading_max_level": null,
+      "headings": null,
+      "first_heading": null,
+      "paragraph_count": null,
+      "char_count": null,
+      "table_count": null,
+      "tables": null,
+      "shape_count": null,
+      "inline_shape_count": null,
+      "sheet_count": 2,
+      "sheets": [
+        {
+          "name": "取引明細",
+          "rows": 4001,
+          "cols": 12,
+          "non_empty_cells": 48012,
+          "total_cells": 48012,
+          "empty_ratio": 0.0
+        },
+        {
+          "name": "月次集計",
+          "rows": 7,
+          "cols": 4,
+          "non_empty_cells": 28,
+          "total_cells": 28,
+          "empty_ratio": 0.0
+        }
+      ],
+      "hidden_sheet_count": 0,
+      "protected_sheet_count": 0,
+      "total_merged_cells": 0,
+      "total_tables": 1,
+      "total_images": 0,
+      "total_formulas": 0,
+      "total_comments": 0,
+      "has_named_ranges": false,
+      "named_range_count": 0,
+      "has_data_validation": false,
+      "has_conditional_formatting": false,
+      "has_print_settings": false,
+      "has_outline": false,
+      "has_auto_filter": true,
+      "estimated_layout_type": "data_table",
+      "error": null
+    },
+    {
+      "path": "ledger_with_sections.xlsx",
+      "extension": ".xlsx",
+      "size_bytes": 7434,
+      "category": "Excel",
+      "heading_count": null,
+      "heading_max_level": null,
+      "headings": null,
+      "first_heading": null,
+      "paragraph_count": null,
+      "char_count": null,
+      "table_count": null,
+      "tables": null,
+      "shape_count": null,
+      "inline_shape_count": null,
+      "sheet_count": 2,
+      "sheets": [
+        {
+          "name": "取引台帳",
+          "rows": 15,
+          "cols": 11,
+          "non_empty_cells": 73,
+          "total_cells": 165,
+          "empty_ratio": 0.5576
+        },
+        {
+          "name": "部門別メモ",
+          "rows": 5,
+          "cols": 6,
+          "non_empty_cells": 7,
+          "total_cells": 30,
+          "empty_ratio": 0.7667
+        }
+      ],
+      "hidden_sheet_count": 0,
+      "protected_sheet_count": 0,
+      "total_merged_cells": 11,
+      "total_tables": 0,
+      "total_images": 0,
+      "total_formulas": 1,
+      "total_comments": 0,
+      "has_named_ranges": false,
+      "named_range_count": 0,
+      "has_data_validation": false,
+      "has_conditional_formatting": false,
+      "has_print_settings": false,
+      "has_outline": false,
+      "has_auto_filter": false,
+      "estimated_layout_type": "unknown",
+      "error": null
+    },
+    {
+      "path": "many_images.docx",
+      "extension": ".docx",
+      "size_bytes": 40525,
+      "category": "Word",
+      "heading_count": 10,
+      "heading_max_level": 2,
+      "headings": [
+        {
+          "level": 1,
+          "text": "画像が多数含まれるテストドキュメント"
+        },
+        {
+          "level": 2,
+          "text": "システム構成図"
+        },
+        {
+          "level": 2,
+          "text": "ネットワーク構成図"
+        },
+        {
+          "level": 2,
+          "text": "画面遷移図"
+        },
+        {
+          "level": 2,
+          "text": "ER 図"
+        },
+        {
+          "level": 2,
+          "text": "クラス図"
+        },
+        {
+          "level": 2,
+          "text": "シーケンス図"
+        },
+        {
+          "level": 2,
+          "text": "デプロイ構成図"
+        },
+        {
+          "level": 2,
+          "text": "データフロー図"
+        },
+        {
+          "level": 2,
+          "text": "アイコン一覧"
+        }
+      ],
+      "first_heading": "画像が多数含まれるテストドキュメント",
+      "paragraph_count": 43,
+      "char_count": 280,
+      "table_count": 1,
+      "tables": [
+        {
+          "rows": 4,
+          "cols": 3,
+          "has_merged_cells": false
+        }
+      ],
+      "shape_count": 0,
+      "inline_shape_count": 11,
+      "sheet_count": null,
+      "sheets": null,
+      "hidden_sheet_count": null,
+      "protected_sheet_count": null,
+      "total_merged_cells": null,
+      "total_tables": null,
+      "total_images": null,
+      "total_formulas": null,
+      "total_comments": null,
+      "has_named_ranges": null,
+      "named_range_count": null,
+      "has_data_validation": null,
+      "has_conditional_formatting": null,
+      "has_print_settings": null,
+      "has_outline": null,
+      "has_auto_filter": null,
+      "estimated_layout_type": null,
+      "error": null
+    },
+    {
+      "path": "many_images.xlsx",
+      "extension": ".xlsx",
+      "size_bytes": 13638,
+      "category": "Excel",
+      "heading_count": null,
+      "heading_max_level": null,
+      "headings": null,
+      "first_heading": null,
+      "paragraph_count": null,
+      "char_count": null,
+      "table_count": null,
+      "tables": null,
+      "shape_count": null,
+      "inline_shape_count": null,
+      "sheet_count": 2,
+      "sheets": [
+        {
+          "name": "画面一覧",
+          "rows": 32,
+          "cols": 10,
+          "non_empty_cells": 7,
+          "total_cells": 320,
+          "empty_ratio": 0.9781
+        },
+        {
+          "name": "アイコン一覧",
+          "rows": 4,
+          "cols": 3,
+          "non_empty_cells": 9,
+          "total_cells": 12,
+          "empty_ratio": 0.25
+        }
+      ],
+      "hidden_sheet_count": 0,
+      "protected_sheet_count": 0,
+      "total_merged_cells": 1,
+      "total_tables": 1,
+      "total_images": 7,
+      "total_formulas": 0,
+      "total_comments": 0,
+      "has_named_ranges": false,
+      "named_range_count": 0,
+      "has_data_validation": false,
+      "has_conditional_formatting": false,
+      "has_print_settings": false,
+      "has_outline": false,
+      "has_auto_filter": false,
+      "estimated_layout_type": "data_table",
+      "error": null
+    },
+    {
+      "path": "many_objects.docx",
+      "extension": ".docx",
+      "size_bytes": 41833,
+      "category": "Word",
+      "heading_count": 4,
+      "heading_max_level": 2,
+      "headings": [
+        {
+          "level": 1,
+          "text": "図形が多数含まれるテストドキュメント"
+        },
+        {
+          "level": 2,
+          "text": "フロー図"
+        },
+        {
+          "level": 2,
+          "text": "テキストボックス群"
+        },
+        {
+          "level": 2,
+          "text": "VML 図形"
+        }
+      ],
+      "first_heading": "図形が多数含まれるテストドキュメント",
+      "paragraph_count": 24,
+      "char_count": 107,
+      "table_count": 0,
+      "tables": [],
+      "shape_count": 9,
+      "inline_shape_count": 7,
+      "sheet_count": null,
+      "sheets": null,
+      "hidden_sheet_count": null,
+      "protected_sheet_count": null,
+      "total_merged_cells": null,
+      "total_tables": null,
+      "total_images": null,
+      "total_formulas": null,
+      "total_comments": null,
+      "has_named_ranges": null,
+      "named_range_count": null,
+      "has_data_validation": null,
+      "has_conditional_formatting": null,
+      "has_print_settings": null,
+      "has_outline": null,
+      "has_auto_filter": null,
+      "estimated_layout_type": null,
+      "error": null
+    },
+    {
+      "path": "many_tables.docx",
+      "extension": ".docx",
+      "size_bytes": 39136,
+      "category": "Word",
+      "heading_count": 12,
+      "heading_max_level": 2,
+      "headings": [
+        {
+          "level": 1,
+          "text": "表が多数含まれるテストドキュメント"
+        },
+        {
+          "level": 2,
+          "text": "ユーザー管理テーブル"
+        },
+        {
+          "level": 2,
+          "text": "エラーコード一覧"
+        },
+        {
+          "level": 2,
+          "text": "画面一覧"
+        },
+        {
+          "level": 2,
+          "text": "API エンドポイント一覧"
+        },
+        {
+          "level": 2,
+          "text": "バッチ処理一覧"
+        },
+        {
+          "level": 2,
+          "text": "テーブル定義: t_users"
+        },
+        {
+          "level": 2,
+          "text": "テーブル定義: t_logs"
+        },
+        {
+          "level": 2,
+          "text": "環境情報"
+        },
+        {
+          "level": 2,
+          "text": "設定パラメータ"
+        },
+        {
+          "level": 2,
+          "text": "リリース計画"
+        },
+        {
+          "level": 2,
+          "text": "結合セルを含む表"
+        }
+      ],
+      "first_heading": "表が多数含まれるテストドキュメント",
+      "paragraph_count": 23,
+      "char_count": 138,
+      "table_count": 11,
+      "tables": [
+        {
+          "rows": 5,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 7,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 3,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 4,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 8,
+          "cols": 5,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 4,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 3,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 4,
+          "cols": 5,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 5,
+          "cols": 4,
+          "has_merged_cells": false
+        }
+      ],
+      "shape_count": 0,
+      "inline_shape_count": 0,
+      "sheet_count": null,
+      "sheets": null,
+      "hidden_sheet_count": null,
+      "protected_sheet_count": null,
+      "total_merged_cells": null,
+      "total_tables": null,
+      "total_images": null,
+      "total_formulas": null,
+      "total_comments": null,
+      "has_named_ranges": null,
+      "named_range_count": null,
+      "has_data_validation": null,
+      "has_conditional_formatting": null,
+      "has_print_settings": null,
+      "has_outline": null,
+      "has_auto_filter": null,
+      "estimated_layout_type": null,
+      "error": null
+    },
+    {
+      "path": "many_tables.xlsx",
+      "extension": ".xlsx",
+      "size_bytes": 14905,
+      "category": "Excel",
+      "heading_count": null,
+      "heading_max_level": null,
+      "headings": null,
+      "first_heading": null,
+      "paragraph_count": null,
+      "char_count": null,
+      "table_count": null,
+      "tables": null,
+      "shape_count": null,
+      "inline_shape_count": null,
+      "sheet_count": 6,
+      "sheets": [
+        {
+          "name": "ユーザー管理",
+          "rows": 8,
+          "cols": 4,
+          "non_empty_cells": 21,
+          "total_cells": 32,
+          "empty_ratio": 0.3438
+        },
+        {
+          "name": "エラーコード",
+          "rows": 9,
+          "cols": 4,
+          "non_empty_cells": 25,
+          "total_cells": 36,
+          "empty_ratio": 0.3056
+        },
+        {
+          "name": "画面一覧",
+          "rows": 9,
+          "cols": 3,
+          "non_empty_cells": 19,
+          "total_cells": 27,
+          "empty_ratio": 0.2963
+        },
+        {
+          "name": "API一覧",
+          "rows": 9,
+          "cols": 4,
+          "non_empty_cells": 25,
+          "total_cells": 36,
+          "empty_ratio": 0.3056
+        },
+        {
+          "name": "環境情報",
+          "rows": 7,
+          "cols": 4,
+          "non_empty_cells": 17,
+          "total_cells": 28,
+          "empty_ratio": 0.3929
+        },
+        {
+          "name": "設定値",
+          "rows": 9,
+          "cols": 3,
+          "non_empty_cells": 19,
+          "total_cells": 27,
+          "empty_ratio": 0.2963
+        }
+      ],
+      "hidden_sheet_count": 0,
+      "protected_sheet_count": 0,
+      "total_merged_cells": 6,
+      "total_tables": 6,
+      "total_images": 0,
+      "total_formulas": 0,
+      "total_comments": 0,
+      "has_named_ranges": false,
+      "named_range_count": 0,
+      "has_data_validation": false,
+      "has_conditional_formatting": false,
+      "has_print_settings": false,
+      "has_outline": false,
+      "has_auto_filter": false,
+      "estimated_layout_type": "data_table",
+      "error": null
+    },
+    {
+      "path": "merged_cells.docx",
+      "extension": ".docx",
+      "size_bytes": 38472,
+      "category": "Word",
+      "heading_count": 7,
+      "heading_max_level": 2,
+      "headings": [
+        {
+          "level": 1,
+          "text": "セル結合テストドキュメント"
+        },
+        {
+          "level": 2,
+          "text": "1. 縦結合（大分類・中分類の階層）"
+        },
+        {
+          "level": 2,
+          "text": "2. 横結合（セクションヘッダー）"
+        },
+        {
+          "level": 2,
+          "text": "3. 縦横結合の混在（テスト結果マトリクス）"
+        },
+        {
+          "level": 2,
+          "text": "4. 深い階層構造（3段の縦結合）"
+        },
+        {
+          "level": 2,
+          "text": "5. 複合ヘッダー（横結合+縦結合）"
+        },
+        {
+          "level": 2,
+          "text": "6. 不規則な結合（合計行・備考行）"
+        }
+      ],
+      "first_heading": "セル結合テストドキュメント",
+      "paragraph_count": 13,
+      "char_count": 146,
+      "table_count": 6,
+      "tables": [
+        {
+          "rows": 8,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 7,
+          "cols": 4,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 7,
+          "cols": 5,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 10,
+          "cols": 5,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 6,
+          "cols": 6,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 7,
+          "cols": 4,
+          "has_merged_cells": false
+        }
+      ],
+      "shape_count": 0,
+      "inline_shape_count": 0,
+      "sheet_count": null,
+      "sheets": null,
+      "hidden_sheet_count": null,
+      "protected_sheet_count": null,
+      "total_merged_cells": null,
+      "total_tables": null,
+      "total_images": null,
+      "total_formulas": null,
+      "total_comments": null,
+      "has_named_ranges": null,
+      "named_range_count": null,
+      "has_data_validation": null,
+      "has_conditional_formatting": null,
+      "has_print_settings": null,
+      "has_outline": null,
+      "has_auto_filter": null,
+      "estimated_layout_type": null,
+      "error": null
+    },
+    {
+      "path": "merged_cells.xlsx",
+      "extension": ".xlsx",
+      "size_bytes": 7420,
+      "category": "Excel",
+      "heading_count": null,
+      "heading_max_level": null,
+      "headings": null,
+      "first_heading": null,
+      "paragraph_count": null,
+      "char_count": null,
+      "table_count": null,
+      "tables": null,
+      "shape_count": null,
+      "inline_shape_count": null,
+      "sheet_count": 3,
+      "sheets": [
+        {
+          "name": "階層構造",
+          "rows": 8,
+          "cols": 4,
+          "non_empty_cells": 24,
+          "total_cells": 32,
+          "empty_ratio": 0.25
+        },
+        {
+          "name": "複合ヘッダ",
+          "rows": 6,
+          "cols": 6,
+          "non_empty_cells": 32,
+          "total_cells": 36,
+          "empty_ratio": 0.1111
+        },
+        {
+          "name": "不規則結合",
+          "rows": 7,
+          "cols": 4,
+          "non_empty_cells": 22,
+          "total_cells": 28,
+          "empty_ratio": 0.2143
+        }
+      ],
+      "hidden_sheet_count": 0,
+      "protected_sheet_count": 0,
+      "total_merged_cells": 12,
+      "total_tables": 0,
+      "total_images": 0,
+      "total_formulas": 0,
+      "total_comments": 0,
+      "has_named_ranges": false,
+      "named_range_count": 0,
+      "has_data_validation": false,
+      "has_conditional_formatting": false,
+      "has_print_settings": false,
+      "has_outline": false,
+      "has_auto_filter": false,
+      "estimated_layout_type": "unknown",
+      "error": null
+    },
+    {
+      "path": "mixed_complex.docx",
+      "extension": ".docx",
+      "size_bytes": 38626,
+      "category": "Word",
+      "heading_count": 6,
+      "heading_max_level": 2,
+      "headings": [
+        {
+          "level": 1,
+          "text": "機能仕様書（総合テスト）"
+        },
+        {
+          "level": 2,
+          "text": "1. 概要"
+        },
+        {
+          "level": 2,
+          "text": "2. システム構成"
+        },
+        {
+          "level": 2,
+          "text": "3. 画面一覧"
+        },
+        {
+          "level": 2,
+          "text": "4. 機能詳細"
+        },
+        {
+          "level": 2,
+          "text": "5. 処理フロー"
+        }
+      ],
+      "first_heading": "機能仕様書（総合テスト）",
+      "paragraph_count": 23,
+      "char_count": 214,
+      "table_count": 3,
+      "tables": [
+        {
+          "rows": 4,
+          "cols": 3,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 5,
+          "cols": 3,
+          "has_merged_cells": false
+        },
+        {
+          "rows": 3,
+          "cols": 4,
+          "has_merged_cells": false
+        }
+      ],
+      "shape_count": 3,
+      "inline_shape_count": 2,
+      "sheet_count": null,
+      "sheets": null,
+      "hidden_sheet_count": null,
+      "protected_sheet_count": null,
+      "total_merged_cells": null,
+      "total_tables": null,
+      "total_images": null,
+      "total_formulas": null,
+      "total_comments": null,
+      "has_named_ranges": null,
+      "named_range_count": null,
+      "has_data_validation": null,
+      "has_conditional_formatting": null,
+      "has_print_settings": null,
+      "has_outline": null,
+      "has_auto_filter": null,
+      "estimated_layout_type": null,
+      "error": null
+    },
+    {
+      "path": "mixed_complex.xlsx",
+      "extension": ".xlsx",
+      "size_bytes": 14367,
+      "category": "Excel",
+      "heading_count": null,
+      "heading_max_level": null,
+      "headings": null,
+      "first_heading": null,
+      "paragraph_count": null,
+      "char_count": null,
+      "table_count": null,
+      "tables": null,
+      "shape_count": null,
+      "inline_shape_count": null,
+      "sheet_count": 5,
+      "sheets": [
+        {
+          "name": "概要",
+          "rows": 7,
+          "cols": 6,
+          "non_empty_cells": 13,
+          "total_cells": 42,
+          "empty_ratio": 0.6905
+        },
+        {
+          "name": "機能一覧",
+          "rows": 5,
+          "cols": 5,
+          "non_empty_cells": 25,
+          "total_cells": 25,
+          "empty_ratio": 0.0
+        },
+        {
+          "name": "フロー",
+          "rows": 11,
+          "cols": 7,
+          "non_empty_cells": 3,
+          "total_cells": 77,
+          "empty_ratio": 0.961
+        },
+        {
+          "name": "設定",
+          "rows": 9,
+          "cols": 4,
+          "non_empty_cells": 23,
+          "total_cells": 36,
+          "empty_ratio": 0.3611
+        },
+        {
+          "name": "マスタ",
+          "rows": 4,
+          "cols": 1,
+          "non_empty_cells": 4,
+          "total_cells": 4,
+          "empty_ratio": 0.0
+        }
+      ],
+      "hidden_sheet_count": 1,
+      "protected_sheet_count": 0,
+      "total_merged_cells": 5,
+      "total_tables": 3,
+      "total_images": 1,
+      "total_formulas": 4,
+      "total_comments": 1,
+      "has_named_ranges": false,
+      "named_range_count": 0,
+      "has_data_validation": true,
+      "has_conditional_formatting": false,
+      "has_print_settings": false,
+      "has_outline": false,
+      "has_auto_filter": false,
+      "estimated_layout_type": "data_table",
+      "error": null
+    },
+    {
+      "path": "multiple_tables_sheet.xlsx",
+      "extension": ".xlsx",
+      "size_bytes": 9742,
+      "category": "Excel",
+      "heading_count": null,
+      "heading_max_level": null,
+      "headings": null,
+      "first_heading": null,
+      "paragraph_count": null,
+      "char_count": null,
+      "table_count": null,
+      "tables": null,
+      "shape_count": null,
+      "inline_shape_count": null,
+      "sheet_count": 2,
+      "sheets": [
+        {
+          "name": "複数表混在",
+          "rows": 17,
+          "cols": 10,
+          "non_empty_cells": 42,
+          "total_cells": 170,
+          "empty_ratio": 0.7529
+        },
+        {
+          "name": "右寄せ配置",
+          "rows": 21,
+          "cols": 11,
+          "non_empty_cells": 21,
+          "total_cells": 231,
+          "empty_ratio": 0.9091
+        }
+      ],
+      "hidden_sheet_count": 0,
+      "protected_sheet_count": 0,
+      "total_merged_cells": 5,
+      "total_tables": 5,
+      "total_images": 0,
+      "total_formulas": 0,
+      "total_comments": 0,
+      "has_named_ranges": false,
+      "named_range_count": 0,
+      "has_data_validation": false,
+      "has_conditional_formatting": false,
+      "has_print_settings": false,
+      "has_outline": false,
+      "has_auto_filter": false,
+      "estimated_layout_type": "data_table",
+      "error": null
+    },
+    {
+      "path": "oasys_style.docx",
+      "extension": ".docx",
+      "size_bytes": 37402,
+      "category": "Word",
+      "heading_count": 0,
+      "heading_max_level": 0,
+      "headings": [],
+      "first_heading": null,
+      "paragraph_count": 22,
+      "char_count": 294,
+      "table_count": 1,
+      "tables": [
+        {
+          "rows": 4,
+          "cols": 3,
+          "has_merged_cells": false
+        }
+      ],
+      "shape_count": 0,
+      "inline_shape_count": 0,
+      "sheet_count": null,
+      "sheets": null,
+      "hidden_sheet_count": null,
+      "protected_sheet_count": null,
+      "total_merged_cells": null,
+      "total_tables": null,
+      "total_images": null,
+      "total_formulas": null,
+      "total_comments": null,
+      "has_named_ranges": null,
+      "named_range_count": null,
+      "has_data_validation": null,
+      "has_conditional_formatting": null,
+      "has_print_settings": null,
+      "has_outline": null,
+      "has_auto_filter": null,
+      "estimated_layout_type": null,
+      "error": null
+    },
+    {
+      "path": "outline_and_filter.xlsx",
+      "extension": ".xlsx",
+      "size_bytes": 7722,
+      "category": "Excel",
+      "heading_count": null,
+      "heading_max_level": null,
+      "headings": null,
+      "first_heading": null,
+      "paragraph_count": null,
+      "char_count": null,
+      "table_count": null,
+      "tables": null,
+      "shape_count": null,
+      "inline_shape_count": null,
+      "sheet_count": 2,
+      "sheets": [
+        {
+          "name": "工程一覧",
+          "rows": 10,
+          "cols": 9,
+          "non_empty_cells": 83,
+          "total_cells": 90,
+          "empty_ratio": 0.0778
+        },
+        {
+          "name": "月次集計",
+          "rows": 5,
+          "cols": 4,
+          "non_empty_cells": 20,
+          "total_cells": 20,
+          "empty_ratio": 0.0
+        }
+      ],
+      "hidden_sheet_count": 0,
+      "protected_sheet_count": 0,
+      "total_merged_cells": 0,
+      "total_tables": 1,
+      "total_images": 0,
+      "total_formulas": 0,
+      "total_comments": 0,
+      "has_named_ranges": false,
+      "named_range_count": 0,
+      "has_data_validation": false,
+      "has_conditional_formatting": false,
+      "has_print_settings": false,
+      "has_outline": true,
+      "has_auto_filter": true,
+      "estimated_layout_type": "data_table",
+      "error": null
+    },
+    {
+      "path": "overlay_workflow.docx",
+      "extension": ".docx",
+      "size_bytes": 37759,
+      "category": "Word",
+      "heading_count": 5,
+      "heading_max_level": 2,
+      "headings": [
+        {
+          "level": 1,
+          "text": "ワークフロー図（オブジェクト重ね置き）"
+        },
+        {
+          "level": 2,
+          "text": "1. 承認フロー"
+        },
+        {
+          "level": 2,
+          "text": "2. エラーハンドリングフロー"
+        },
+        {
+          "level": 2,
+          "text": "3. テキストボックスのみのフロー"
+        },
+        {
+          "level": 2,
+          "text": "4. 抽出上の課題"
+        }
+      ],
+      "first_heading": "ワークフロー図（オブジェクト重ね置き）",
+      "paragraph_count": 48,
+      "char_count": 363,
+      "table_count": 0,
+      "tables": [],
+      "shape_count": 17,
+      "inline_shape_count": 0,
+      "sheet_count": null,
+      "sheets": null,
+      "hidden_sheet_count": null,
+      "protected_sheet_count": null,
+      "total_merged_cells": null,
+      "total_tables": null,
+      "total_images": null,
+      "total_formulas": null,
+      "total_comments": null,
+      "has_named_ranges": null,
+      "named_range_count": null,
+      "has_data_validation": null,
+      "has_conditional_formatting": null,
+      "has_print_settings": null,
+      "has_outline": null,
+      "has_auto_filter": null,
+      "estimated_layout_type": null,
+      "error": null
+    },
+    {
+      "path": "protected_master_validation.xlsx",
+      "extension": ".xlsx",
+      "size_bytes": 9231,
+      "category": "Excel",
+      "heading_count": null,
+      "heading_max_level": null,
+      "headings": null,
+      "first_heading": null,
+      "paragraph_count": null,
+      "char_count": null,
+      "table_count": null,
+      "tables": null,
+      "shape_count": null,
+      "inline_shape_count": null,
+      "sheet_count": 3,
+      "sheets": [
+        {
+          "name": "入力シート",
+          "rows": 5,
+          "cols": 12,
+          "non_empty_cells": 40,
+          "total_cells": 60,
+          "empty_ratio": 0.3333
+        },
+        {
+          "name": "マスタ",
+          "rows": 5,
+          "cols": 3,
+          "non_empty_cells": 13,
+          "total_cells": 15,
+          "empty_ratio": 0.1333
+        },
+        {
+          "name": "照会",
+          "rows": 4,
+          "cols": 4,
+          "non_empty_cells": 16,
+          "total_cells": 16,
+          "empty_ratio": 0.0
+        }
+      ],
+      "hidden_sheet_count": 1,
+      "protected_sheet_count": 2,
+      "total_merged_cells": 0,
+      "total_tables": 2,
+      "total_images": 0,
+      "total_formulas": 12,
+      "total_comments": 0,
+      "has_named_ranges": true,
+      "named_range_count": 3,
+      "has_data_validation": true,
+      "has_conditional_formatting": false,
+      "has_print_settings": false,
+      "has_outline": false,
+      "has_auto_filter": false,
+      "estimated_layout_type": "data_table",
+      "error": null
+    },
+    {
+      "path": "timesheet_calendar.xlsx",
+      "extension": ".xlsx",
+      "size_bytes": 8956,
+      "category": "Excel",
+      "heading_count": null,
+      "heading_max_level": null,
+      "headings": null,
+      "first_heading": null,
+      "paragraph_count": null,
+      "char_count": null,
+      "table_count": null,
+      "tables": null,
+      "shape_count": null,
+      "inline_shape_count": null,
+      "sheet_count": 2,
+      "sheets": [
+        {
+          "name": "2026年04月勤怠",
+          "rows": 12,
+          "cols": 37,
+          "non_empty_cells": 247,
+          "total_cells": 444,
+          "empty_ratio": 0.4437
+        },
+        {
+          "name": "シフト",
+          "rows": 5,
+          "cols": 5,
+          "non_empty_cells": 25,
+          "total_cells": 25,
+          "empty_ratio": 0.0
+        }
+      ],
+      "hidden_sheet_count": 0,
+      "protected_sheet_count": 0,
+      "total_merged_cells": 9,
+      "total_tables": 1,
+      "total_images": 0,
+      "total_formulas": 42,
+      "total_comments": 0,
+      "has_named_ranges": false,
+      "named_range_count": 0,
+      "has_data_validation": false,
+      "has_conditional_formatting": false,
+      "has_print_settings": false,
+      "has_outline": false,
+      "has_auto_filter": false,
+      "estimated_layout_type": "data_table",
+      "error": null
+    },
+    {
+      "path": "wareki_and_normalization.xlsx",
+      "extension": ".xlsx",
+      "size_bytes": 9368,
+      "category": "Excel",
+      "heading_count": null,
+      "heading_max_level": null,
+      "headings": null,
+      "first_heading": null,
+      "paragraph_count": null,
+      "char_count": null,
+      "table_count": null,
+      "tables": null,
+      "shape_count": null,
+      "inline_shape_count": null,
+      "sheet_count": 2,
+      "sheets": [
+        {
+          "name": "和暦",
+          "rows": 4,
+          "cols": 7,
+          "non_empty_cells": 22,
+          "total_cells": 28,
+          "empty_ratio": 0.2143
+        },
+        {
+          "name": "正規化観点",
+          "rows": 8,
+          "cols": 6,
+          "non_empty_cells": 28,
+          "total_cells": 48,
+          "empty_ratio": 0.4167
+        }
+      ],
+      "hidden_sheet_count": 0,
+      "protected_sheet_count": 0,
+      "total_merged_cells": 0,
+      "total_tables": 2,
+      "total_images": 0,
+      "total_formulas": 0,
+      "total_comments": 1,
+      "has_named_ranges": false,
+      "named_range_count": 0,
+      "has_data_validation": false,
+      "has_conditional_formatting": false,
+      "has_print_settings": false,
+      "has_outline": false,
+      "has_auto_filter": false,
+      "estimated_layout_type": "data_table",
+      "error": null
+    }
+  ]
+}

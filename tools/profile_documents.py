@@ -17,8 +17,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
+from collections import Counter
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -65,6 +67,21 @@ class FileProfile:
     # .xlsx 詳細
     sheet_count: int | None = None
     sheets: list[dict] | None = None  # [SheetInfo as dict, ...]
+    hidden_sheet_count: int | None = None
+    protected_sheet_count: int | None = None
+    total_merged_cells: int | None = None
+    total_tables: int | None = None
+    total_images: int | None = None
+    total_formulas: int | None = None
+    total_comments: int | None = None
+    has_named_ranges: bool | None = None
+    named_range_count: int | None = None
+    has_data_validation: bool | None = None
+    has_conditional_formatting: bool | None = None
+    has_print_settings: bool | None = None
+    has_outline: bool | None = None
+    has_auto_filter: bool | None = None
+    estimated_layout_type: str | None = None
 
     # エラー
     error: str | None = None
@@ -179,47 +196,161 @@ def profile_docx(filepath: Path) -> dict:
 # ---------------------------------------------------------------------------
 # .xlsx プロファイリング
 # ---------------------------------------------------------------------------
+XLSX_FORMULA_SAMPLE_ROW_LIMIT = 1000
+XLSX_LARGE_SHEET_ROW_THRESHOLD = 100
+XLSX_LARGE_SHEET_COL_THRESHOLD = 20
+XLSX_FORM_GRID_STDDEV_THRESHOLD = 0.5
+
+
+def _xlsx_outline_level(dimension) -> int:
+    return int(getattr(dimension, "outlineLevel", getattr(dimension, "outline_level", 0)) or 0)
+
+
+def _xlsx_stddev(values: list[float]) -> float | None:
+    if not values:
+        return None
+    avg = sum(values) / len(values)
+    variance = sum((value - avg) ** 2 for value in values) / len(values)
+    return math.sqrt(variance)
+
+
+def _estimate_xlsx_layout_type(candidates: set[str]) -> str:
+    if len(candidates) > 1:
+        return "mixed"
+    if len(candidates) == 1:
+        return next(iter(candidates))
+    return "unknown"
+
+
 def profile_xlsx(filepath: Path) -> dict:
     try:
         from openpyxl import load_workbook
+        from openpyxl.cell.cell import MergedCell
     except ImportError:
         return {"error": "openpyxl がインストールされていません (pip install openpyxl)"}
 
     try:
-        wb = load_workbook(str(filepath), read_only=True, data_only=True)
+        wb = load_workbook(str(filepath), read_only=False, data_only=False)
     except Exception as e:
         return {"error": f"xlsx 読み込み失敗: {e}"}
 
     sheets: list[dict] = []
-    for ws in wb.worksheets:
-        max_row = ws.max_row or 0
-        max_col = ws.max_column or 0
-        total = max_row * max_col
-        non_empty = 0
-        if total > 0:
-            for row in ws.iter_rows(min_row=1, max_row=max_row, max_col=max_col):
-                for cell in row:
-                    if cell.value is not None:
-                        non_empty += 1
-        empty_ratio = round(1 - (non_empty / total), 4) if total > 0 else 0.0
-        sheets.append(
-            asdict(
-                SheetInfo(
-                    name=ws.title,
-                    rows=max_row,
-                    cols=max_col,
-                    non_empty_cells=non_empty,
-                    total_cells=total,
-                    empty_ratio=empty_ratio,
+    hidden_sheet_count = 0
+    protected_sheet_count = 0
+    total_merged_cells = 0
+    total_tables = 0
+    total_images = 0
+    total_formulas = 0
+    total_comments = 0
+    has_data_validation = False
+    has_conditional_formatting = False
+    has_print_settings = False
+    has_outline = False
+    has_auto_filter = False
+    layout_candidates: set[str] = set()
+
+    try:
+        named_range_count = len(list(wb.defined_names.items()))
+
+        for ws in wb.worksheets:
+            max_row = ws.max_row or 0
+            max_col = ws.max_column or 0
+            total = max_row * max_col
+
+            concrete_cells = [cell for cell in getattr(ws, "_cells", {}).values() if not isinstance(cell, MergedCell)]
+            non_empty = sum(1 for cell in concrete_cells if cell.value is not None)
+            empty_ratio = round(1 - (non_empty / total), 4) if total > 0 else 0.0
+            sheets.append(
+                asdict(
+                    SheetInfo(
+                        name=ws.title,
+                        rows=max_row,
+                        cols=max_col,
+                        non_empty_cells=non_empty,
+                        total_cells=total,
+                        empty_ratio=empty_ratio,
+                    )
                 )
             )
-        )
 
-    wb.close()
-    return {
-        "sheet_count": len(sheets),
-        "sheets": sheets,
-    }
+            if ws.sheet_state != "visible":
+                hidden_sheet_count += 1
+            if ws.protection.sheet:
+                protected_sheet_count += 1
+
+            total_merged_cells += len(ws.merged_cells.ranges)
+            total_tables += len(ws.tables)
+            total_images += len(getattr(ws, "_images", []))
+            total_comments += sum(1 for cell in concrete_cells if cell.comment is not None)
+
+            sampled_formulas = sum(
+                1
+                for cell in concrete_cells
+                if cell.row <= XLSX_FORMULA_SAMPLE_ROW_LIMIT
+                and isinstance(cell.value, str)
+                and cell.value.startswith("=")
+            )
+            total_formulas += sampled_formulas
+
+            dv_count = len(getattr(ws.data_validations, "dataValidation", []))
+            if dv_count > 0:
+                has_data_validation = True
+
+            cf_rule_count = 0
+            if hasattr(ws.conditional_formatting, "_cf_rules"):
+                cf_rule_count = sum(len(rules) for rules in ws.conditional_formatting._cf_rules.values())
+            else:
+                try:
+                    cf_rule_count = len(ws.conditional_formatting)
+                except Exception:
+                    cf_rule_count = 0
+            if cf_rule_count > 0:
+                has_conditional_formatting = True
+
+            if ws.print_area or ws.print_title_rows or ws.print_title_cols:
+                has_print_settings = True
+                layout_candidates.add("report_print")
+
+            if ws.auto_filter and ws.auto_filter.ref:
+                has_auto_filter = True
+
+            row_outline = any(_xlsx_outline_level(dim) > 0 for dim in ws.row_dimensions.values())
+            col_outline = any(_xlsx_outline_level(dim) > 0 for dim in ws.column_dimensions.values())
+            if row_outline or col_outline:
+                has_outline = True
+
+            widths = [float(dim.width) for dim in ws.column_dimensions.values() if dim.width is not None]
+            width_stddev = _xlsx_stddev(widths)
+            grid_lines_visible = ws.sheet_view.showGridLines
+            if grid_lines_visible is None:
+                grid_lines_visible = True
+            if width_stddev is not None and width_stddev <= XLSX_FORM_GRID_STDDEV_THRESHOLD and not grid_lines_visible:
+                layout_candidates.add("form_grid")
+
+            if len(ws.tables) > 0 or max_row > XLSX_LARGE_SHEET_ROW_THRESHOLD:
+                layout_candidates.add("data_table")
+
+        return {
+            "sheet_count": len(sheets),
+            "sheets": sheets,
+            "hidden_sheet_count": hidden_sheet_count,
+            "protected_sheet_count": protected_sheet_count,
+            "total_merged_cells": total_merged_cells,
+            "total_tables": total_tables,
+            "total_images": total_images,
+            "total_formulas": total_formulas,
+            "total_comments": total_comments,
+            "has_named_ranges": named_range_count > 0,
+            "named_range_count": named_range_count,
+            "has_data_validation": has_data_validation,
+            "has_conditional_formatting": has_conditional_formatting,
+            "has_print_settings": has_print_settings,
+            "has_outline": has_outline,
+            "has_auto_filter": has_auto_filter,
+            "estimated_layout_type": _estimate_xlsx_layout_type(layout_candidates),
+        }
+    finally:
+        wb.close()
 
 
 # ---------------------------------------------------------------------------
@@ -455,7 +586,7 @@ def build_text_report(profiles: list[FileProfile], summary: dict) -> str:
         for p in xlsx_files:
             if p.sheets:
                 for s in p.sheets:
-                    if s["rows"] >= 100 or s["cols"] >= 20:
+                    if s["rows"] >= XLSX_LARGE_SHEET_ROW_THRESHOLD or s["cols"] >= XLSX_LARGE_SHEET_COL_THRESHOLD:
                         large_sheets.append({"file": p.path, **s})
         if large_sheets:
             lines.append(f"  大きなシート（100行以上 or 20列以上）: {len(large_sheets)}件")
@@ -463,6 +594,44 @@ def build_text_report(profiles: list[FileProfile], summary: dict) -> str:
                 lines.append(f"    - {ls['file']} / {ls['name']}: {ls['rows']}行×{ls['cols']}列 (空率{ls['empty_ratio']:.0%})")
             if len(large_sheets) > 5:
                 lines.append(f"    - 他{len(large_sheets) - 5}件")
+
+        hidden_sheet_files = [p for p in xlsx_files if (p.hidden_sheet_count or 0) > 0]
+        protected_sheet_files = [p for p in xlsx_files if (p.protected_sheet_count or 0) > 0]
+        merged_files = [p for p in xlsx_files if (p.total_merged_cells or 0) > 0]
+        table_files = [p for p in xlsx_files if (p.total_tables or 0) > 0]
+        image_files = [p for p in xlsx_files if (p.total_images or 0) > 0]
+        formula_files = [p for p in xlsx_files if (p.total_formulas or 0) > 0]
+        comment_files = [p for p in xlsx_files if (p.total_comments or 0) > 0]
+        named_range_files = [p for p in xlsx_files if p.has_named_ranges]
+        dv_files = [p for p in xlsx_files if p.has_data_validation]
+        cf_files = [p for p in xlsx_files if p.has_conditional_formatting]
+        print_setting_files = [p for p in xlsx_files if p.has_print_settings]
+        outline_files = [p for p in xlsx_files if p.has_outline]
+        filter_files = [p for p in xlsx_files if p.has_auto_filter]
+
+        lines.append(f"  非表示シートを含むファイル: {len(hidden_sheet_files)}件")
+        lines.append(f"  シート保護を含むファイル: {len(protected_sheet_files)}件")
+        lines.append(
+            f"  結合セルを含むファイル: {len(merged_files)}件 "
+            f"(合計{sum((p.total_merged_cells or 0) for p in merged_files)}件)"
+        )
+        lines.append(f"  Excel Table を含むファイル: {len(table_files)}件")
+        lines.append(f"  画像を含むファイル: {len(image_files)}件")
+        lines.append(f"  数式を含むファイル: {len(formula_files)}件")
+        lines.append(f"  コメントを含むファイル: {len(comment_files)}件")
+        lines.append(f"  名前定義を含むファイル: {len(named_range_files)}件")
+        lines.append(f"  入力規則を含むファイル: {len(dv_files)}件")
+        lines.append(f"  条件付き書式を含むファイル: {len(cf_files)}件")
+        lines.append(f"  印刷設定を含むファイル: {len(print_setting_files)}件")
+        lines.append(f"  アウトラインを含むファイル: {len(outline_files)}件")
+        lines.append(f"  オートフィルタを含むファイル: {len(filter_files)}件")
+
+        layout_counter: Counter[str] = Counter(
+            p.estimated_layout_type or "unknown" for p in xlsx_files
+        )
+        lines.append("  レイアウト推定の分布:")
+        for layout, count in layout_counter.most_common():
+            lines.append(f"    - {layout}: {count}件")
         lines.append("")
 
     # --- COM 変換が必要なファイル ---
