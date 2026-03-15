@@ -204,7 +204,10 @@ def _render_shape(content: dict[str, Any]) -> str:
                 if part.strip():
                     lines.append(f"  - {part.strip()}")
     else:
-        lines.append(f"[{label}]")
+        if label == "図形" and shape_type:
+            lines.append(f"[図形: {shape_type}]")
+        else:
+            lines.append(f"[{label}]")
 
     return "\n".join(lines)
 

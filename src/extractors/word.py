@@ -43,6 +43,11 @@ from src.models.metadata import (
 
 logger = getLogger(__name__)
 
+_FIGURE_CAPTION_RE = re.compile(
+    r"^(?:図|Fig\.?|Figure)(?=\s*\d|\s*[:：]|\s+)(?:\s*[:：]?\s*)(.+)$",
+    re.IGNORECASE,
+)
+
 
 # ---------------------------------------------------------------------------
 # 疑似見出し検出
@@ -68,6 +73,20 @@ def _get_font_size_pt(para: Paragraph) -> float | None:
             return style.font.size.pt
         style = style.base_style
     return None
+
+
+def _is_figure_caption(text: str) -> str | None:
+    """段落テキストが図キャプションかどうか判定する。"""
+    stripped = text.strip()
+    if not stripped or len(stripped) > 60 or stripped.endswith("。"):
+        return None
+
+    match = _FIGURE_CAPTION_RE.match(stripped)
+    if not match:
+        return None
+
+    caption = match.group(1).strip()
+    return caption or None
 
 
 def _detect_heading(
@@ -539,23 +558,27 @@ def extract_docx(
     table_counter = 0
     shape_count = 0
     image_count = 0
+    last_image_element: ImageElement | None = None
 
     for elem_type, idx_or_data in element_order:
         if elem_type == "image":
             # 段落内のインライン画像 → IMAGE 要素として追加
-            image_count += 1
             alt_text = idx_or_data if isinstance(idx_or_data, str) else ""
+            image = ImageElement(alt_text=alt_text, description="")
             intermediate.elements.append(DocumentElement(
                 type=ElementType.IMAGE,
-                content=ImageElement(alt_text=alt_text, description=""),
+                content=image,
                 source_index=source_idx,
             ))
+            last_image_element = image
             source_idx += 1
+            image_count += 1
             continue
 
         if elem_type == "shape_inline":
             # 段落内の浮動図形 → SHAPE 要素として追加（正しい出現位置）
             shape: ShapeElement = idx_or_data
+            last_image_element = None
             shape_count += 1
             intermediate.elements.append(DocumentElement(
                 type=ElementType.SHAPE,
@@ -569,6 +592,17 @@ def extract_docx(
             para = paragraphs[idx_or_data]
             text = para.text.strip()
 
+            if last_image_element is not None and text:
+                caption_text = _is_figure_caption(text)
+                if caption_text:
+                    last_image_element.description = caption_text
+                    last_image_element = None
+                    source_idx += 1
+                    continue
+
+            if text:
+                last_image_element = None
+
             # 疑似見出し検出
             heading_info = _detect_heading(para, config)
             if heading_info:
@@ -578,6 +612,7 @@ def extract_docx(
                 intermediate.add_paragraph(text, source_index=source_idx)
 
         elif elem_type == "table" and table_counter < len(table_data_list):
+            last_image_element = None
             rows, has_merged, is_ch = table_data_list[table_counter]
             table_counter += 1
 
@@ -605,6 +640,8 @@ def extract_docx(
                 fallback_reason=fallback_reason,
                 source_index=source_idx,
             )
+        else:
+            last_image_element = None
 
         source_idx += 1
 

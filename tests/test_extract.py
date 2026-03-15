@@ -16,6 +16,7 @@ import pytest
 from src.config import PipelineConfig
 from src.extractors.word import extract_docx
 from src.models.metadata import ProcessStatus
+from tests.conftest import _create_dummy_image
 
 
 class TestHeadingDetection:
@@ -267,6 +268,86 @@ class TestElementOrder:
         # source_index が単調増加
         indices = [e["source_index"] for e in elements]
         assert indices == sorted(indices), "source_index が単調増加であること"
+
+
+class TestImageCaptionDetection:
+    """画像キャプション検出テスト（P2）"""
+
+    def test_figure_caption_merged_to_image(self, tmp_path: Path, config: PipelineConfig):
+        """画像直後の「図: XXX」が ImageElement.description に統合されること"""
+        from docx import Document as DocxDocument
+
+        doc = DocxDocument()
+        doc.add_paragraph("以下にシステム構成図を示す。")
+        image_path = tmp_path / "dummy.png"
+        _create_dummy_image(image_path)
+        doc.add_picture(str(image_path))
+        doc.add_paragraph("図: システム構成図")
+        doc.add_paragraph("本文が続く。")
+
+        path = tmp_path / "img_caption.docx"
+        doc.save(str(path))
+
+        record, result = extract_docx(path, "img_caption.docx", ".docx", config)
+
+        assert result.status in (ProcessStatus.SUCCESS, ProcessStatus.WARNING)
+        elements = record.document["elements"]
+
+        images = [e for e in elements if e["type"] == "image"]
+        assert len(images) == 1
+        assert images[0]["content"]["description"] == "システム構成図"
+
+        headings = [e for e in elements if e["type"] == "heading"]
+        caption_headings = [
+            h for h in headings if "システム構成図" in h["content"]["text"]
+        ]
+        assert len(caption_headings) == 0
+
+    def test_non_caption_not_merged(self, tmp_path: Path, config: PipelineConfig):
+        """画像直後でも図キャプションでない段落は統合されないこと"""
+        from docx import Document as DocxDocument
+
+        doc = DocxDocument()
+        image_path = tmp_path / "dummy.png"
+        _create_dummy_image(image_path)
+        doc.add_picture(str(image_path))
+        doc.add_paragraph("この画像は参考資料である。")
+
+        path = tmp_path / "img_no_caption.docx"
+        doc.save(str(path))
+
+        record, _ = extract_docx(path, "img_no_caption.docx", ".docx", config)
+        elements = record.document["elements"]
+
+        images = [e for e in elements if e["type"] == "image"]
+        assert len(images) == 1
+        assert images[0]["content"]["description"] == ""
+
+        paragraphs = [e for e in elements if e["type"] == "paragraph"]
+        assert any(
+            p["content"]["text"] == "この画像は参考資料である。"
+            for p in paragraphs
+        )
+
+    def test_figure_caption_with_number(self, tmp_path: Path, config: PipelineConfig):
+        """「図1 画面遷移図」形式のキャプションが統合されること"""
+        from docx import Document as DocxDocument
+
+        doc = DocxDocument()
+        image_path = tmp_path / "dummy.png"
+        _create_dummy_image(image_path)
+        doc.add_picture(str(image_path))
+        doc.add_paragraph("図1 画面遷移図")
+
+        path = tmp_path / "img_numbered.docx"
+        doc.save(str(path))
+
+        record, _ = extract_docx(path, "img_numbered.docx", ".docx", config)
+        elements = record.document["elements"]
+
+        images = [e for e in elements if e["type"] == "image"]
+        assert len(images) == 1
+        assert "画面遷移図" in images[0]["content"]["description"]
 
 
 class TestErrorHandling:

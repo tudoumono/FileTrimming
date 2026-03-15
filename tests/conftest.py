@@ -6,6 +6,8 @@ python-docx で各種パターンの .docx を動的に生成する。
 
 from __future__ import annotations
 
+import struct
+import zlib
 from pathlib import Path
 
 import pytest
@@ -14,6 +16,28 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt
 
 from src.config import PipelineConfig
+
+
+def _create_dummy_image(path: Path) -> None:
+    """テスト用 1x1 PNG を作成する。"""
+    sig = b"\x89PNG\r\n\x1a\n"
+    ihdr_data = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    ihdr_crc = zlib.crc32(b"IHDR" + ihdr_data)
+    ihdr = struct.pack(">I", 13) + b"IHDR" + ihdr_data + struct.pack(">I", ihdr_crc)
+
+    raw = b"\x00\xff\xff\xff"
+    idat_data = zlib.compress(raw)
+    idat_crc = zlib.crc32(b"IDAT" + idat_data)
+    idat = (
+        struct.pack(">I", len(idat_data))
+        + b"IDAT"
+        + idat_data
+        + struct.pack(">I", idat_crc)
+    )
+
+    iend_crc = zlib.crc32(b"IEND")
+    iend = struct.pack(">I", 0) + b"IEND" + struct.pack(">I", iend_crc)
+    path.write_bytes(sig + ihdr + idat + iend)
 
 
 @pytest.fixture
