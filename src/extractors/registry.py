@@ -22,8 +22,8 @@ ExtractorFunc = "Callable[[Path, str, str, PipelineConfig], tuple[ExtractedFileR
 _REGISTRY: dict[str, str] = {
     # Word 系 (Phase 1) — 正規化後は全て .docx
     ".docx": "src.extractors.word:extract_docx",
-    # Excel 系 (将来)
-    # ".xlsx": "src.extractors.excel:extract_xlsx",
+    # Excel 系 (Phase 2) — 正規化後は全て .xlsx
+    ".xlsx": "src.extractors.excel:extract_xlsx",
     # BAGLES 系 (将来)
     # ".bik": "src.extractors.bagles:extract_bagles",
     # テキスト系 (将来)

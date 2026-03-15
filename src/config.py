@@ -54,13 +54,13 @@ class PipelineConfig:
     ollama_model: str = "llama-3-elyza-8b"
 
     # --- Step1: 正規化 ---
-    # COM 変換対象の拡張子
+    # COM 変換対象の拡張子 (.doc/.rtf → Word COM → .docx, .xls → Excel COM → .xlsx)
     com_normalize_exts: set[str] = field(
-        default_factory=lambda: {".doc", ".rtf"}
+        default_factory=lambda: {".doc", ".rtf", ".xls"}
     )
-    # そのまま通す拡張子
+    # そのまま通す拡張子（正規化不要でコピーのみ）
     passthrough_exts: set[str] = field(
-        default_factory=lambda: {".docx"}
+        default_factory=lambda: {".docx", ".xlsx", ".xlsm"}
     )
 
     # --- Step2: 構造抽出 ---
@@ -76,6 +76,11 @@ class PipelineConfig:
     )
     change_history_min_match: int = 3
 
+    # --- Step2: Excel 構造抽出 ---
+    # 大きなシートの警告閾値
+    excel_large_sheet_rows: int = 500
+    excel_large_sheet_cols: int = 30
+
     # --- Step3: 変換 ---
     # Dify のファイルサイズ上限 (bytes)
     max_file_size_bytes: int = 15 * 1024 * 1024  # 15MB
@@ -83,6 +88,11 @@ class PipelineConfig:
     # --- Word 系対象拡張子（全ステップ共通） ---
     word_exts: set[str] = field(
         default_factory=lambda: {".doc", ".docx", ".rtf"}
+    )
+
+    # --- Excel 系対象拡張子（全ステップ共通） ---
+    excel_exts: set[str] = field(
+        default_factory=lambda: {".xls", ".xlsx", ".xlsm"}
     )
 
     def load_env(self, env_path: Path | None = None) -> None:

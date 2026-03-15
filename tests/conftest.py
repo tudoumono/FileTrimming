@@ -1,6 +1,6 @@
 """テスト用フィクスチャ
 
-python-docx で各種パターンの .docx を動的に生成する。
+python-docx / openpyxl で各種パターンの .docx / .xlsx を動的に生成する。
 実データは使えないため、§14 の調査結果に基づいた再現ファイルを作る。
 """
 
@@ -14,6 +14,8 @@ import pytest
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Pt
+from openpyxl import Workbook
+from openpyxl.comments import Comment
 
 from src.config import PipelineConfig
 
@@ -271,4 +273,150 @@ def heuristic_heading_docx(tmp_path: Path) -> Path:
 
     path = tmp_path / "heuristic.docx"
     doc.save(str(path))
+    return path
+
+
+# ===========================================================================
+# Excel テスト用フィクスチャ
+# ===========================================================================
+
+@pytest.fixture
+def simple_xlsx(tmp_path: Path) -> Path:
+    """基本的なデータテーブルを含む .xlsx"""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "エラーコード一覧"
+
+    # ヘッダー
+    ws.append(["コード", "メッセージ", "対処方法"])
+    ws.append(["E001", "入力値が不正です", "入力形式を確認してください"])
+    ws.append(["E002", "接続タイムアウト", "ネットワーク状態を確認してください"])
+    ws.append(["E003", "ファイルが見つかりません", "パスを確認してください"])
+
+    path = tmp_path / "simple.xlsx"
+    wb.save(str(path))
+    return path
+
+
+@pytest.fixture
+def multi_sheet_xlsx(tmp_path: Path) -> Path:
+    """複数シートを含む .xlsx"""
+    wb = Workbook()
+
+    # シート1: 機能一覧
+    ws1 = wb.active
+    ws1.title = "機能一覧"
+    ws1.append(["機能ID", "機能名", "ステータス"])
+    ws1.append(["F001", "ログイン", "完了"])
+    ws1.append(["F002", "データ検索", "開発中"])
+
+    # シート2: エラーコード
+    ws2 = wb.create_sheet("エラーコード")
+    ws2.append(["コード", "内容"])
+    ws2.append(["E001", "認証エラー"])
+
+    path = tmp_path / "multi_sheet.xlsx"
+    wb.save(str(path))
+    return path
+
+
+@pytest.fixture
+def merged_cells_xlsx(tmp_path: Path) -> Path:
+    """結合セルを含む .xlsx"""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "設定一覧"
+
+    # ヘッダー行（横結合）
+    ws["A1"] = "分類"
+    ws["B1"] = "項目"
+    ws["C1"] = "値"
+
+    # 縦結合: A2:A3 を結合
+    ws["A2"] = "接続設定"
+    ws.merge_cells("A2:A3")
+    ws["B2"] = "ホスト名"
+    ws["C2"] = "db-server01"
+    ws["B3"] = "ポート"
+    ws["C3"] = "5432"
+
+    # 横結合: A4:C4 を結合（セクション区切り）
+    ws["A4"] = "■ 認証設定"
+    ws.merge_cells("A4:C4")
+
+    ws["A5"] = "認証設定"
+    ws["B5"] = "ユーザー名"
+    ws["C5"] = "admin"
+
+    path = tmp_path / "merged.xlsx"
+    wb.save(str(path))
+    return path
+
+
+@pytest.fixture
+def hidden_sheet_xlsx(tmp_path: Path) -> Path:
+    """非表示シートを含む .xlsx"""
+    wb = Workbook()
+
+    ws1 = wb.active
+    ws1.title = "表示シート"
+    ws1.append(["データ", "値"])
+    ws1.append(["A", "1"])
+
+    ws2 = wb.create_sheet("マスタ")
+    ws2.append(["マスタデータ"])
+    ws2.append(["非表示の内容"])
+    ws2.sheet_state = "hidden"
+
+    path = tmp_path / "hidden.xlsx"
+    wb.save(str(path))
+    return path
+
+
+@pytest.fixture
+def comments_xlsx(tmp_path: Path) -> Path:
+    """コメント付きセルを含む .xlsx"""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "レビュー"
+
+    ws.append(["項目", "値", "備考"])
+    ws["A2"] = "顧客ID"
+    ws["B2"] = "C001"
+    ws["B2"].comment = Comment("外部IFとの整合確認が必要。", "レビュアー")
+    ws["A3"] = "契約日"
+    ws["B3"] = "2025/01/15"
+
+    path = tmp_path / "comments.xlsx"
+    wb.save(str(path))
+    return path
+
+
+@pytest.fixture
+def empty_xlsx(tmp_path: Path) -> Path:
+    """空の .xlsx"""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "空シート"
+    # 何もデータを入れない
+
+    path = tmp_path / "empty.xlsx"
+    wb.save(str(path))
+    return path
+
+
+@pytest.fixture
+def large_xlsx(tmp_path: Path) -> Path:
+    """大きなデータシートを含む .xlsx（警告閾値テスト用）"""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "取引明細"
+
+    headers = ["取引ID", "日付", "顧客名", "金額"]
+    ws.append(headers)
+    for i in range(600):  # 500行超 → 警告
+        ws.append([f"T{i+1:04d}", "2025/01/01", f"顧客{i+1}", (i + 1) * 1000])
+
+    path = tmp_path / "large.xlsx"
+    wb.save(str(path))
     return path

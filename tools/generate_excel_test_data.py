@@ -4,6 +4,7 @@ openpyxl で作成可能なパターンのテストデータを生成する。
 
 使い方:
   python tools/generate_excel_test_data.py [--output-dir input/]
+  # デフォルト出力先: input/excel/
 
 生成ファイル:
   1. many_tables.xlsx            - 複数シートに業務表を配置したブック
@@ -1592,6 +1593,12 @@ def generate_outline_and_filter(output_dir: Path) -> Path:
     return path
 
 
+def _resolve_output_dir(base_dir: Path, leaf_name: str) -> Path:
+    if base_dir.name.lower() == leaf_name.lower():
+        return base_dir
+    return base_dir / leaf_name
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="テストデータ .xlsx 生成")
     parser.add_argument(
@@ -1599,11 +1606,11 @@ def main() -> None:
         "-o",
         type=Path,
         default=Path("input"),
-        help="出力先ディレクトリ (default: input/)",
+        help="出力先ベースディレクトリ (default: input/ -> input/excel/)",
     )
     args = parser.parse_args()
 
-    output_dir: Path = args.output_dir
+    output_dir = _resolve_output_dir(args.output_dir, "excel")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"テストデータ生成先: {output_dir}/")

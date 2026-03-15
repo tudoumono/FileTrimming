@@ -69,28 +69,29 @@ def run_step2_extract(config: PipelineConfig) -> list[StepResult]:
     logger.info("=== Step2: 構造抽出 開始 ===")
     t0 = time.perf_counter()
 
-    # 正規化済み .docx を収集
-    files = _collect_files(config.normalized_dir, {".docx"})
-    logger.info("対象ファイル: %d 件", len(files))
+    # レジストリに登録済みの拡張子を全て対象にする (.docx, .xlsx 等)
+    from src.extractors.registry import supported_extensions
+    target_exts = supported_extensions()
+    files = _collect_files(config.normalized_dir, target_exts)
+    logger.info("対象ファイル: %d 件 (拡張子: %s)", len(files), ", ".join(sorted(target_exts)))
 
     results: list[StepResult] = []
-    for docx_path in files:
-        rel = docx_path.relative_to(config.normalized_dir)
+    for file_path in files:
+        rel = file_path.relative_to(config.normalized_dir)
 
-        # 元ファイル情報の推定
         source_path = str(rel)
-        source_ext = ".docx"  # 正規化後は全て .docx
+        source_ext = file_path.suffix.lower()
 
-        extractor = get_extractor(".docx")
+        extractor = get_extractor(source_ext)
         if extractor is None:
             results.append(StepResult(
                 file_path=source_path, step="extract",
                 status=ProcessStatus.SKIPPED,
-                message="no extractor for .docx",
+                message=f"no extractor for {source_ext}",
             ))
             continue
 
-        record, result = extractor(docx_path, source_path, source_ext, config)
+        record, result = extractor(file_path, source_path, source_ext, config)
         results.append(result)
 
         # JSON 出力
