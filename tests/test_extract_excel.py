@@ -15,6 +15,7 @@
 from pathlib import Path
 
 import pytest
+from openpyxl import Workbook
 
 from src.config import PipelineConfig
 from src.extractors.excel import extract_xlsx
@@ -189,6 +190,73 @@ class TestComments:
         comment_texts = [t for t in all_texts if "※注:" in t]
         assert len(comment_texts) >= 1
         assert any("外部IF" in t for t in comment_texts)
+
+
+class TestLayoutSegmentation:
+    """レイアウト分割のテスト"""
+
+    def test_separated_regions_become_multiple_tables(self, tmp_path: Path, config: PipelineConfig):
+        """空白行・空白列で分離された領域が別テーブルとして抽出されること"""
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "複数領域"
+
+        ws["A1"] = "帳票一覧"
+        ws.merge_cells("A1:B1")
+        ws["A3"] = "ID"
+        ws["B3"] = "名称"
+        ws["A4"] = "R1"
+        ws["B4"] = "売上日報"
+
+        ws["E1"] = "バッチ一覧"
+        ws.merge_cells("E1:F1")
+        ws["E3"] = "ID"
+        ws["F3"] = "処理名"
+        ws["E4"] = "B1"
+        ws["F4"] = "日次集計"
+
+        path = tmp_path / "segmented.xlsx"
+        wb.save(path)
+
+        record, _ = extract_xlsx(path, "segmented.xlsx", ".xlsx", config)
+        tables = [e for e in record.document["elements"] if e["type"] == "table"]
+
+        assert len(tables) >= 4
+        flattened = [
+            [cell["text"] for row in table["content"]["rows"] for cell in row]
+            for table in tables
+        ]
+        assert any("帳票一覧" in texts for texts in flattened)
+        assert any("バッチ一覧" in texts for texts in flattened)
+        assert any("売上日報" in texts for texts in flattened)
+        assert any("日次集計" in texts for texts in flattened)
+
+
+class TestFormulaFallback:
+    """数式セルのフォールバックテスト"""
+
+    def test_formula_text_used_when_cached_value_missing(self, tmp_path: Path, config: PipelineConfig):
+        """data_only で値が空でも数式文字列が残ること"""
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "集計"
+        ws.append(["項目", "値"])
+        ws.append(["売上", 100])
+        ws.append(["合計", "=SUM(B2:B2)"])
+
+        path = tmp_path / "formula.xlsx"
+        wb.save(path)
+
+        record, _ = extract_xlsx(path, "formula.xlsx", ".xlsx", config)
+        tables = [e for e in record.document["elements"] if e["type"] == "table"]
+        all_texts = [
+            cell["text"]
+            for table in tables
+            for row in table["content"]["rows"]
+            for cell in row
+        ]
+
+        assert "=SUM(B2:B2)" in all_texts
 
 
 class TestEmptySheet:

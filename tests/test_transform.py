@@ -285,6 +285,49 @@ class TestMergedCellRendering:
         assert "品目: 合計" in md
         assert "金額: 2,310,000" in md
 
+    def test_single_row_header_strip(self):
+        """承認欄のような 1 行の短いヘッダー列を key-value にしないこと"""
+        doc = IntermediateDocument()
+        doc.add_table(
+            rows=[[
+                CellData(text="設備購入稟議書", row=0, col=0, colspan=8, is_header=True),
+                CellData(text="担当課長", row=0, col=8, colspan=2, is_header=True),
+                CellData(text="部長", row=0, col=10, colspan=2, is_header=True),
+                CellData(text="役員", row=0, col=12, colspan=2, is_header=True),
+            ]],
+            has_merged_cells=True,
+        )
+
+        md = transform_to_markdown(_make_record(doc))
+        assert "**設備購入稟議書**" in md
+        assert "担当課長 | 部長 | 役員" in md
+        assert "設備購入稟議書: 担当課長" not in md
+
+    def test_rowspan_header_calendar(self):
+        """rowspan を含む 2 段ヘッダーが親子ラベルに結合されること"""
+        doc = IntermediateDocument()
+        doc.add_table(
+            rows=[
+                [CellData(text="社員番号", row=0, col=0, rowspan=2),
+                 CellData(text="氏名", row=0, col=1, rowspan=2),
+                 CellData(text="1", row=0, col=2),
+                 CellData(text="2", row=0, col=3)],
+                [CellData(text="水", row=1, col=2),
+                 CellData(text="木", row=1, col=3)],
+                [CellData(text="E001", row=2, col=0),
+                 CellData(text="田中", row=2, col=1),
+                 CellData(text="出", row=2, col=2),
+                 CellData(text="休", row=2, col=3)],
+            ],
+            has_merged_cells=True,
+        )
+
+        md = transform_to_markdown(_make_record(doc))
+        assert "社員番号: E001" in md
+        assert "氏名: 田中" in md
+        assert "1/水: 出" in md
+        assert "2/木: 休" in md
+
 
 class TestShapeRendering:
     def test_shape_with_texts(self):

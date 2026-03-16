@@ -4,19 +4,18 @@
 
 設計方針:
   - openpyxl で確定的に抽出（LLM は使わない）
-  - シート単位でセクション化（シート名 → 見出し）
-  - 結合セル対応: openpyxl の merged_cells_ranges から検出
-  - コメント: セルテキストに「※注: ...」として付記
-  - 非表示シート: スキップし、ログに記録
-  - 画像: 存在のみ IMAGE 要素として記録（テキスト抽出不可）
-  - 数式: openpyxl は data_only=False で数式文字列、data_only=True でキャッシュ値。
-    ここでは data_only=True で値優先、取れない場合は数式文字列をフォールバック
-  - 空行・空列の自動トリミング: データ範囲外の空セルは除外
+  - シート名は見出しとして保持する
+  - シート全体を 1 表に潰さず、レイアウト上つながった領域ごとに抽出する
+  - コメントはセルテキストに「※注: ...」として付記する
+  - 数式はキャッシュ値優先、値が空なら数式文字列へフォールバックする
+  - 非表示シートはスキップし、ログに記録する
+  - 画像は存在のみ IMAGE 要素として記録する
 """
 
 from __future__ import annotations
 
 import time
+from collections import deque
 from logging import getLogger
 from pathlib import Path
 
@@ -47,50 +46,8 @@ logger = getLogger(__name__)
 # ユーティリティ
 # ---------------------------------------------------------------------------
 
-def _get_data_bounds(ws: Worksheet) -> tuple[int, int, int, int] | None:
-    """シートのデータ範囲 (min_row, min_col, max_row, max_col) を返す。
-
-    完全に空のシートなら None を返す。
-    openpyxl の ws.max_row/max_col は書式だけのセルも含むため、
-    実データのある範囲を走査して特定する。
-    """
-    min_r = min_c = float("inf")
-    max_r = max_c = 0
-
-    for row in ws.iter_rows():
-        for cell in row:
-            if isinstance(cell, MergedCell):
-                # 結合セルの一部（内容は親セルが持つ）→ 範囲には含める
-                if cell.row < min_r:
-                    min_r = cell.row
-                if cell.row > max_r:
-                    max_r = cell.row
-                if cell.column < min_c:
-                    min_c = cell.column
-                if cell.column > max_c:
-                    max_c = cell.column
-                continue
-            if cell.value is not None:
-                if cell.row < min_r:
-                    min_r = cell.row
-                if cell.row > max_r:
-                    max_r = cell.row
-                if cell.column < min_c:
-                    min_c = cell.column
-                if cell.column > max_c:
-                    max_c = cell.column
-
-    if max_r == 0:
-        return None
-    return int(min_r), int(min_c), int(max_r), int(max_c)
-
-
 def _build_merge_map(ws: Worksheet) -> dict[tuple[int, int], tuple[int, int, int, int]]:
-    """結合セルのマップを構築する。
-
-    Returns:
-        {(row, col): (min_row, min_col, max_row, max_col)} — 結合範囲の左上セルの座標
-    """
+    """結合セルのマップを構築する。"""
     merge_map: dict[tuple[int, int], tuple[int, int, int, int]] = {}
     for merge_range in ws.merged_cells.ranges:
         bounds = (
@@ -105,94 +62,210 @@ def _build_merge_map(ws: Worksheet) -> dict[tuple[int, int], tuple[int, int, int
     return merge_map
 
 
-def _cell_text(cell: Cell, ws: Worksheet) -> str:
-    """セルのテキスト表現を取得する。
-
-    - None → ""
-    - 数値・日付はそのまま str()
-    - コメントがあれば「※注: ...」を付記
-    """
+def _formula_text(cell: Cell | MergedCell) -> str:
     if isinstance(cell, MergedCell):
         return ""
+    value = cell.value
+    if isinstance(value, str) and value.startswith("="):
+        return value.strip()
+    return ""
 
-    val = cell.value
-    if val is None:
-        text = ""
-    else:
-        text = str(val).strip()
 
-    # コメント付記
-    if cell.comment and cell.comment.text:
-        comment_text = cell.comment.text.strip()
-        if comment_text:
-            text = f"{text} ※注: {comment_text}" if text else f"※注: {comment_text}"
+def _cell_has_meaningful_content(
+    value_cell: Cell | MergedCell,
+    formula_cell: Cell | MergedCell,
+) -> bool:
+    """セルが抽出対象となる実質データを持つか判定する。"""
+    if isinstance(value_cell, MergedCell) and isinstance(formula_cell, MergedCell):
+        return False
+
+    if not isinstance(value_cell, MergedCell):
+        value = value_cell.value
+        if value is not None and str(value).strip():
+            return True
+        if value_cell.comment and value_cell.comment.text and value_cell.comment.text.strip():
+            return True
+
+    if not isinstance(formula_cell, MergedCell):
+        value = formula_cell.value
+        if value is not None:
+            text = str(value).strip()
+            if text:
+                return True
+        if formula_cell.comment and formula_cell.comment.text and formula_cell.comment.text.strip():
+            return True
+
+    return False
+
+
+def _cell_text(
+    value_cell: Cell | MergedCell,
+    formula_cell: Cell | MergedCell,
+) -> str:
+    """セルのテキスト表現を取得する。
+
+    - キャッシュ値があれば優先
+    - キャッシュ値が空で数式なら数式文字列へフォールバック
+    - コメントがあれば「※注: ...」を付記
+    """
+    if isinstance(value_cell, MergedCell):
+        if isinstance(formula_cell, MergedCell):
+            return ""
+
+    text = ""
+    if not isinstance(value_cell, MergedCell):
+        value = value_cell.value
+        if value is not None:
+            text = str(value).strip()
+
+    if not text and not isinstance(formula_cell, MergedCell):
+        formula_text = _formula_text(formula_cell)
+        if formula_text:
+            text = formula_text
+        elif formula_cell.value is not None:
+            text = str(formula_cell.value).strip()
+
+    comment_source = value_cell if not isinstance(value_cell, MergedCell) else formula_cell
+    if not isinstance(comment_source, MergedCell):
+        if comment_source.comment and comment_source.comment.text:
+            comment_text = comment_source.comment.text.strip()
+            if comment_text:
+                text = f"{text} ※注: {comment_text}" if text else f"※注: {comment_text}"
 
     return text
 
 
-# ---------------------------------------------------------------------------
-# シート → 表データ変換
-# ---------------------------------------------------------------------------
+def _build_occupied_positions(
+    ws_values: Worksheet,
+    ws_formulas: Worksheet,
+    merge_map: dict[tuple[int, int], tuple[int, int, int, int]],
+) -> set[tuple[int, int]]:
+    """実データを持つ座標を 4 近傍連結判定用に展開する。"""
+    occupied: set[tuple[int, int]] = set()
+    seen_merges: set[tuple[int, int, int, int]] = set()
 
-def _extract_sheet_table(
-    ws: Worksheet,
+    max_row = max(ws_values.max_row or 0, ws_formulas.max_row or 0)
+    max_col = max(ws_values.max_column or 0, ws_formulas.max_column or 0)
+
+    for r in range(1, max_row + 1):
+        for c in range(1, max_col + 1):
+            value_cell = ws_values.cell(row=r, column=c)
+            formula_cell = ws_formulas.cell(row=r, column=c)
+
+            if (r, c) in merge_map:
+                bounds = merge_map[(r, c)]
+                min_r, min_c, max_r, max_c = bounds
+                if (r, c) != (min_r, min_c) or bounds in seen_merges:
+                    continue
+                if not _cell_has_meaningful_content(
+                    ws_values.cell(row=min_r, column=min_c),
+                    ws_formulas.cell(row=min_r, column=min_c),
+                ):
+                    continue
+                seen_merges.add(bounds)
+                for rr in range(min_r, max_r + 1):
+                    for cc in range(min_c, max_c + 1):
+                        occupied.add((rr, cc))
+                continue
+
+            if _cell_has_meaningful_content(value_cell, formula_cell):
+                occupied.add((r, c))
+
+    return occupied
+
+
+def _find_connected_bounds(
+    occupied: set[tuple[int, int]],
+) -> list[tuple[int, int, int, int]]:
+    """4 近傍で連結した領域ごとの矩形 bounds を返す。"""
+    remaining = set(occupied)
+    components: list[tuple[int, int, int, int]] = []
+
+    while remaining:
+        start = remaining.pop()
+        queue: deque[tuple[int, int]] = deque([start])
+        min_r = max_r = start[0]
+        min_c = max_c = start[1]
+
+        while queue:
+            r, c = queue.popleft()
+            if r < min_r:
+                min_r = r
+            if r > max_r:
+                max_r = r
+            if c < min_c:
+                min_c = c
+            if c > max_c:
+                max_c = c
+
+            for nr, nc in ((r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)):
+                if (nr, nc) in remaining:
+                    remaining.remove((nr, nc))
+                    queue.append((nr, nc))
+
+        components.append((min_r, min_c, max_r, max_c))
+
+    components.sort(key=lambda b: (b[0], b[1], b[2], b[3]))
+    return components
+
+
+def _extract_region_table(
+    ws_values: Worksheet,
+    ws_formulas: Worksheet,
     bounds: tuple[int, int, int, int],
     merge_map: dict[tuple[int, int], tuple[int, int, int, int]],
 ) -> tuple[list[list[CellData]], bool]:
-    """シートのデータ範囲を CellData の2次元リストに変換する。
-
-    Returns:
-        (rows, has_merged_cells)
-    """
+    """矩形領域を CellData の 2 次元リストに変換する。"""
     min_r, min_c, max_r, max_c = bounds
-    has_merged = bool(ws.merged_cells.ranges)
     rows: list[list[CellData]] = []
-
-    # 結合セルの左上のみを出力するために、既に出力済みの結合範囲を追跡
     seen_merges: set[tuple[int, int, int, int]] = set()
+    has_merged = False
 
     for r in range(min_r, max_r + 1):
         row_data: list[CellData] = []
         for c in range(min_c, max_c + 1):
-            cell = ws.cell(row=r, column=c)
+            value_cell = ws_values.cell(row=r, column=c)
+            formula_cell = ws_formulas.cell(row=r, column=c)
 
-            # 結合セルの場合
             if (r, c) in merge_map:
                 merge_bounds = merge_map[(r, c)]
                 m_min_r, m_min_c, m_max_r, m_max_c = merge_bounds
 
-                if (r, c) != (m_min_r, m_min_c):
-                    # 結合範囲の左上以外 → スキップ
+                if not (min_r <= m_min_r <= max_r and min_c <= m_min_c <= max_c):
+                    continue
+                if (r, c) != (m_min_r, m_min_c) or merge_bounds in seen_merges:
                     continue
 
-                if merge_bounds in seen_merges:
-                    continue
                 seen_merges.add(merge_bounds)
+                text = _cell_text(
+                    ws_values.cell(row=m_min_r, column=m_min_c),
+                    ws_formulas.cell(row=m_min_r, column=m_min_c),
+                )
+                if not text:
+                    continue
 
-                # 左上セルからテキスト取得
-                top_left = ws.cell(row=m_min_r, column=m_min_c)
-                text = _cell_text(top_left, ws)
-                rowspan = m_max_r - m_min_r + 1
-                colspan = m_max_c - m_min_c + 1
-
+                has_merged = True
                 row_data.append(CellData(
                     text=text,
                     row=r - min_r,
                     col=c - min_c,
-                    rowspan=rowspan,
-                    colspan=colspan,
+                    rowspan=m_max_r - m_min_r + 1,
+                    colspan=m_max_c - m_min_c + 1,
                     is_header=(r == min_r),
                 ))
-            else:
-                text = _cell_text(cell, ws)
-                row_data.append(CellData(
-                    text=text,
-                    row=r - min_r,
-                    col=c - min_c,
-                    rowspan=1,
-                    colspan=1,
-                    is_header=(r == min_r),
-                ))
+                continue
+
+            if not _cell_has_meaningful_content(value_cell, formula_cell):
+                continue
+
+            row_data.append(CellData(
+                text=_cell_text(value_cell, formula_cell),
+                row=r - min_r,
+                col=c - min_c,
+                rowspan=1,
+                colspan=1,
+                is_header=(r == min_r),
+            ))
 
         if row_data:
             rows.append(row_data)
@@ -200,16 +273,53 @@ def _extract_sheet_table(
     return rows, has_merged
 
 
-# ---------------------------------------------------------------------------
-# 画像検出
-# ---------------------------------------------------------------------------
-
 def _count_images(ws: Worksheet) -> int:
     """シート内の画像数を返す。"""
     try:
         return len(ws._images)
     except Exception:
         return 0
+
+
+def _get_outline_level(dimension) -> int:
+    return int(getattr(dimension, "outlineLevel", getattr(dimension, "outline_level", 0)) or 0)
+
+
+def _sheet_notes(ws: Worksheet) -> list[str]:
+    """フィルタ・保護など Excel 固有機能の要約を返す。"""
+    notes: list[str] = []
+
+    if ws.auto_filter and ws.auto_filter.ref:
+        notes.append(f"[Excel機能] フィルタ範囲: {ws.auto_filter.ref}")
+
+    if bool(ws.protection.sheet):
+        notes.append("[Excel機能] シート保護: 有効")
+
+    dv_count = len(getattr(ws.data_validations, "dataValidation", []))
+    if dv_count > 0:
+        notes.append(f"[Excel機能] 入力規則: {dv_count}件")
+
+    has_row_outline = any(_get_outline_level(dim) > 0 for dim in ws.row_dimensions.values())
+    has_col_outline = any(_get_outline_level(dim) > 0 for dim in ws.column_dimensions.values())
+    if has_row_outline or has_col_outline:
+        parts: list[str] = []
+        if has_row_outline:
+            parts.append("行")
+        if has_col_outline:
+            parts.append("列")
+        notes.append(f"[Excel機能] アウトライン: {'/'.join(parts)}グループ化あり")
+
+    hidden_rows = sum(1 for dim in ws.row_dimensions.values() if dim.hidden)
+    hidden_cols = sum(1 for dim in ws.column_dimensions.values() if dim.hidden)
+    if hidden_rows > 0 or hidden_cols > 0:
+        parts: list[str] = []
+        if hidden_rows > 0:
+            parts.append(f"非表示行={hidden_rows}")
+        if hidden_cols > 0:
+            parts.append(f"非表示列={hidden_cols}")
+        notes.append(f"[Excel機能] {' / '.join(parts)}")
+
+    return notes
 
 
 # ---------------------------------------------------------------------------
@@ -222,27 +332,19 @@ def extract_xlsx(
     source_ext: str,
     config: PipelineConfig,
 ) -> tuple[ExtractedFileRecord, StepResult]:
-    """1つの .xlsx ファイルから中間表現を抽出する。
-
-    Args:
-        xlsx_path: .xlsx ファイルパス（正規化済み、または元ファイル）
-        source_path: 元ファイルの相対パス（追跡用）
-        source_ext: 元の拡張子
-        config: パイプライン設定
-
-    Returns:
-        (ExtractedFileRecord, StepResult)
-    """
+    """1つの .xlsx ファイルから中間表現を抽出する。"""
     t0 = time.perf_counter()
 
     try:
-        # data_only=True でキャッシュ値を読む（数式ではなく計算結果）
-        wb = load_workbook(str(xlsx_path), data_only=True, read_only=False)
+        wb_values = load_workbook(str(xlsx_path), data_only=True, read_only=False)
+        wb_formulas = load_workbook(str(xlsx_path), data_only=False, read_only=False)
     except Exception as e:
         elapsed = time.perf_counter() - t0
         result = StepResult(
-            file_path=source_path, step="extract",
-            status=ProcessStatus.ERROR, message=str(e),
+            file_path=source_path,
+            step="extract",
+            status=ProcessStatus.ERROR,
+            message=str(e),
             duration_sec=round(elapsed, 2),
         )
         meta = FileMetadata(source_path=source_path, source_ext=source_ext)
@@ -258,86 +360,89 @@ def extract_xlsx(
     total_merged = 0
     warnings: list[str] = []
 
-    for ws in wb.worksheets:
-        # 非表示シートのスキップ
-        if ws.sheet_state != "visible":
-            hidden_sheets += 1
-            logger.debug("非表示シートをスキップ: %s / %s", source_path, ws.title)
-            continue
+    try:
+        for ws_values in wb_values.worksheets:
+            if ws_values.sheet_state != "visible":
+                hidden_sheets += 1
+                logger.debug("非表示シートをスキップ: %s / %s", source_path, ws_values.title)
+                continue
 
-        total_sheets += 1
+            ws_formulas = wb_formulas[ws_values.title]
+            total_sheets += 1
 
-        # シート名を見出しとして追加
-        intermediate.add_heading(
-            level=2,
-            text=ws.title,
-            detection_method="sheet_name",
-            source_index=source_idx,
-        )
-        source_idx += 1
+            intermediate.add_heading(
+                level=2,
+                text=ws_values.title,
+                detection_method="sheet_name",
+                source_index=source_idx,
+            )
+            source_idx += 1
 
-        # 画像の検出
-        img_count = _count_images(ws)
-        if img_count > 0:
-            total_images += img_count
-            for i in range(img_count):
-                intermediate.elements.append(DocumentElement(
-                    type=ElementType.IMAGE,
-                    content=ImageElement(
-                        alt_text="",
-                        description=f"画像 ({ws.title} 内)",
-                    ),
-                    source_index=source_idx,
-                ))
+            img_count = _count_images(ws_values)
+            if img_count > 0:
+                total_images += img_count
+                for _ in range(img_count):
+                    intermediate.elements.append(DocumentElement(
+                        type=ElementType.IMAGE,
+                        content=ImageElement(
+                            alt_text="",
+                            description=f"画像 ({ws_values.title} 内)",
+                        ),
+                        source_index=source_idx,
+                    ))
+                    source_idx += 1
+
+            merge_map = _build_merge_map(ws_formulas)
+            occupied = _build_occupied_positions(ws_values, ws_formulas, merge_map)
+
+            if not occupied:
+                intermediate.add_paragraph("(空のシート)", source_index=source_idx)
                 source_idx += 1
+            else:
+                component_bounds = _find_connected_bounds(occupied)
+                total_tables += len(component_bounds)
 
-        # データ範囲の特定
-        bounds = _get_data_bounds(ws)
-        if bounds is None:
-            intermediate.add_paragraph(
-                "(空のシート)",
-                source_index=source_idx,
-            )
-            source_idx += 1
-            continue
+                if ws_values.merged_cells.ranges:
+                    total_merged += 1
 
-        # 結合セルマップの構築
-        merge_map = _build_merge_map(ws)
+                for bounds in component_bounds:
+                    rows, has_merged = _extract_region_table(
+                        ws_values, ws_formulas, bounds, merge_map,
+                    )
+                    if not rows:
+                        continue
 
-        # シートの表データ抽出
-        rows, has_merged = _extract_sheet_table(ws, bounds, merge_map)
-        if has_merged:
-            total_merged += 1
+                    num_rows = len(rows)
+                    num_cols = max(
+                        (max(cell.col + cell.colspan for cell in row) for row in rows),
+                        default=0,
+                    )
+                    if (
+                        num_rows > config.excel_large_sheet_rows
+                        or num_cols > config.excel_large_sheet_cols
+                    ):
+                        warnings.append(
+                            f"large_sheet:{ws_values.title}({num_rows}r×{num_cols}c)"
+                        )
 
-        if rows:
-            total_tables += 1
+                    confidence = Confidence.MEDIUM if has_merged else Confidence.HIGH
+                    intermediate.add_table(
+                        rows=rows,
+                        caption="",
+                        has_merged_cells=has_merged,
+                        confidence=confidence,
+                        fallback_reason="",
+                        source_index=source_idx,
+                    )
+                    source_idx += 1
 
-            # 大きすぎるシートの警告
-            num_rows = len(rows)
-            num_cols = max(len(r) for r in rows) if rows else 0
-            if num_rows > config.excel_large_sheet_rows or num_cols > config.excel_large_sheet_cols:
-                warnings.append(
-                    f"large_sheet:{ws.title}({num_rows}r×{num_cols}c)"
-                )
+            for note in _sheet_notes(ws_values):
+                intermediate.add_paragraph(note, source_index=source_idx)
+                source_idx += 1
+    finally:
+        wb_values.close()
+        wb_formulas.close()
 
-            confidence = Confidence.HIGH
-            fallback_reason = ""
-            if has_merged:
-                confidence = Confidence.MEDIUM
-
-            intermediate.add_table(
-                rows=rows,
-                caption=ws.title,
-                has_merged_cells=has_merged,
-                confidence=confidence,
-                fallback_reason=fallback_reason,
-                source_index=source_idx,
-            )
-            source_idx += 1
-
-    wb.close()
-
-    # --- メタデータ構築 ---
     meta = FileMetadata(
         source_path=source_path,
         source_ext=source_ext,
@@ -370,8 +475,10 @@ def extract_xlsx(
         msg += ", " + ", ".join(warnings)
 
     result = StepResult(
-        file_path=source_path, step="extract",
-        status=status, message=msg,
+        file_path=source_path,
+        step="extract",
+        status=status,
+        message=msg,
         duration_sec=round(elapsed, 2),
     )
     logger.info("抽出完了: %s (%s)", source_path, msg)
