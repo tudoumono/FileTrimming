@@ -16,10 +16,30 @@ import pytest
 
 from src.config import PipelineConfig
 from src.extractors.word import extract_docx
+from src.llm.base import LLMBackend, ReconstructionUnit, TableInterpretationResult
 from src.models.metadata import ProcessStatus
 from src.pipeline.folder_processor import run_step2_extract, run_step3_transform
 from src.pipeline.splitter import split_if_needed
 from src.transform.to_markdown import transform_file, transform_to_markdown
+
+
+class _FakeTableBackend(LLMBackend):
+    def generate(self, prompt: str, system: str = "") -> str:
+        return ""
+
+    def supports_table_interpretation(self) -> bool:
+        return True
+
+    def interpret_table(
+        self, unit: ReconstructionUnit, system: str = "",
+    ) -> TableInterpretationResult:
+        return TableInterpretationResult(
+            schema_version="1.0",
+            unit_id=unit.unit_id,
+            table_type="data_table",
+            render_strategy="data_table",
+            self_assessment={"confidence": "medium"},
+        )
 
 
 class TestStep2ToStep3:
@@ -161,6 +181,64 @@ class TestFolderProcessor:
             entry = json.loads(line)
             assert "status" in entry
             assert "step" in entry
+
+    def test_step3_writes_llm_review_file_in_apply_mode(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, config: PipelineConfig,
+    ):
+        """LLM適用モードでもレビューJSONが生成されること"""
+        config.llm_backend = "openai"
+
+        sample_record = {
+            "metadata": {
+                "source_path": "sample.xlsx",
+                "source_ext": ".xlsx",
+                "doc_role_guess": "unknown",
+            },
+            "document": {
+                "elements": [
+                    {"type": "heading", "content": {
+                        "text": "申請書", "level": 2, "detection_method": "sheet_name",
+                    }},
+                    {"type": "table", "content": {
+                        "rows": [
+                            [
+                                {"text": "項目", "row": 0, "col": 0, "is_header": True},
+                                {"text": "値", "row": 0, "col": 1, "is_header": True},
+                            ],
+                            [
+                                {"text": "件名", "row": 1, "col": 0},
+                                {"text": "サンプル", "row": 1, "col": 1},
+                            ],
+                        ],
+                        "caption": "",
+                        "has_merged_cells": False,
+                        "confidence": "medium",
+                        "fallback_reason": "",
+                    }},
+                ],
+            },
+        }
+
+        json_path = config.extracted_dir / "sample.json"
+        json_path.parent.mkdir(parents=True, exist_ok=True)
+        json_path.write_text(
+            json.dumps(sample_record, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr(
+            "src.pipeline.folder_processor.create_backend",
+            lambda _config: _FakeTableBackend(),
+        )
+
+        results = run_step3_transform(config)
+        assert any(r.status == ProcessStatus.SUCCESS for r in results)
+
+        review_path = config.review_dir / "sample.llm_review.json"
+        assert review_path.exists()
+        review = json.loads(review_path.read_text(encoding="utf-8"))
+        assert review["observation_only"] is False
+        assert len(review["tables"]) == 1
 
 
 class TestSplitter:

@@ -8,7 +8,13 @@ from __future__ import annotations
 
 from logging import getLogger
 
-from src.llm.base import LLMBackend
+from src.llm.base import LLMBackend, ReconstructionUnit, TableInterpretationResult
+from src.llm.http_client import build_http_client
+from src.llm.table_interpretation import (
+    TABLE_INTERPRETATION_SYSTEM_PROMPT,
+    build_table_interpretation_prompt,
+    parse_table_interpretation_response,
+)
 
 logger = getLogger(__name__)
 
@@ -16,7 +22,14 @@ logger = getLogger(__name__)
 class OpenAIBackend(LLMBackend):
     """OpenAI API を使った LLM バックエンド"""
 
-    def __init__(self, api_key: str, model: str = "gpt-4o-mini") -> None:
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gpt-4o-mini",
+        base_url: str = "",
+        proxy_url: str = "",
+        skip_ssl_verify: bool = False,
+    ) -> None:
         if not api_key:
             raise ValueError(
                 "OpenAI API キーが設定されていません。\n"
@@ -32,9 +45,25 @@ class OpenAIBackend(LLMBackend):
                 "pip install openai でインストールしてください。"
             ) from e
 
-        self._client = OpenAI(api_key=api_key)
+        client_kwargs: dict[str, object] = {"api_key": api_key}
+        if base_url:
+            client_kwargs["base_url"] = base_url
+        http_client = build_http_client(
+            proxy_url=proxy_url,
+            skip_ssl_verify=skip_ssl_verify,
+        )
+        if http_client is not None:
+            client_kwargs["http_client"] = http_client
+
+        self._client = OpenAI(**client_kwargs)
         self._model = model
-        logger.info("OpenAI バックエンド初期化: model=%s", model)
+        logger.info(
+            "OpenAI バックエンド初期化: model=%s, base_url=%s, proxy=%s, skip_ssl_verify=%s",
+            model,
+            base_url or "(default)",
+            proxy_url or "(none)",
+            skip_ssl_verify,
+        )
 
     def generate(self, prompt: str, system: str = "") -> str:
         messages = []
@@ -47,3 +76,16 @@ class OpenAIBackend(LLMBackend):
             messages=messages,
         )
         return response.choices[0].message.content or ""
+
+    def supports_table_interpretation(self) -> bool:
+        return True
+
+    def interpret_table(
+        self, unit: ReconstructionUnit, system: str = "",
+    ) -> TableInterpretationResult:
+        prompt = build_table_interpretation_prompt(unit)
+        response_text = self.generate(
+            prompt,
+            system=system or TABLE_INTERPRETATION_SYSTEM_PROMPT,
+        )
+        return parse_table_interpretation_response(response_text, unit.unit_id)

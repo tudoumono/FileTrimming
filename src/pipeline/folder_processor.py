@@ -14,6 +14,7 @@ from pathlib import Path
 
 from src.config import PipelineConfig
 from src.extractors.registry import get_extractor
+from src.llm import create_backend
 from src.models.metadata import ProcessStatus, StepResult
 from src.pipeline.normalizer import normalize_file
 from src.pipeline.splitter import split_if_needed
@@ -115,6 +116,21 @@ def run_step3_transform(config: PipelineConfig) -> list[StepResult]:
     logger.info("=== Step3: Markdown 変換 開始 ===")
     t0 = time.perf_counter()
 
+    try:
+        backend = create_backend(config)
+    except Exception as exc:
+        elapsed = time.perf_counter() - t0
+        logger.exception("LLM バックエンド初期化失敗: backend=%s", config.llm_backend)
+        return [StepResult(
+            file_path="step3",
+            step="transform",
+            status=ProcessStatus.ERROR,
+            message=f"LLM backend init error: {exc}",
+            duration_sec=round(elapsed, 2),
+        )]
+
+    logger.info("Step3 LLM バックエンド: %s", config.llm_backend)
+
     json_files = _collect_files(config.extracted_dir, {".json"})
     # ログファイルを除外
     json_files = [f for f in json_files if f.name != "extract_log.jsonl"]
@@ -124,10 +140,24 @@ def run_step3_transform(config: PipelineConfig) -> list[StepResult]:
     for json_path in json_files:
         rel = json_path.relative_to(config.extracted_dir)
         md_rel = rel.with_suffix(".md")
+        observation_path = None
+        if backend.supports_table_interpretation():
+            review_suffix = (
+                ".llm_observation.json"
+                if config.llm_observation_only
+                else ".llm_review.json"
+            )
+            observation_path = config.review_dir / rel.with_suffix(review_suffix)
 
         # 03_transformed/ への出力
         transformed_path = config.transformed_dir / md_rel
-        result = transform_file(json_path, transformed_path)
+        result = transform_file(
+            json_path,
+            transformed_path,
+            backend=backend,
+            observation_only=config.llm_observation_only,
+            observation_path=observation_path,
+        )
         results.append(result)
 
         if result.status != ProcessStatus.ERROR:

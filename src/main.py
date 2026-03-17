@@ -64,9 +64,34 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--llm-backend",
-        default="noop",
+        default=None,
         choices=["noop", "openai", "local"],
-        help="LLM バックエンド (default: noop)",
+        help="LLM バックエンド (未指定時は設定値または noop)",
+    )
+    parser.add_argument(
+        "--openai-base-url",
+        default=None,
+        help="OpenAI 互換 API の接続先 URL（未指定時は公式エンドポイント）",
+    )
+    parser.add_argument(
+        "--ollama-base-url",
+        default=None,
+        help="ローカル LLM の接続先 URL（default: http://localhost:11434）",
+    )
+    parser.add_argument(
+        "--llm-proxy-url",
+        default=None,
+        help="LLM 接続時に使うプロキシ URL",
+    )
+    parser.add_argument(
+        "--llm-skip-ssl-verify",
+        action="store_true",
+        help="LLM 接続時の SSL 証明書検証をスキップする",
+    )
+    parser.add_argument(
+        "--llm-observation-only",
+        action="store_true",
+        help="LLM の解釈結果だけをレビュー成果物へ出力し、Markdown 反映はしない",
     )
     parser.add_argument(
         "--verbose", "-v",
@@ -82,10 +107,21 @@ def main(argv: list[str] | None = None) -> int:
         intermediate_base=args.intermediate,
         output_base=args.output,
         run_id=args.run_id,
-        llm_backend=args.llm_backend,
     )
-    # .env から API キー等を読み込み（CLI 引数の --llm-backend が優先）
+    # .env から API キー等を読み込み、明示的な CLI 引数があれば上書きする
     config.load_env()
+    if args.llm_backend is not None:
+        config.llm_backend = args.llm_backend
+    if args.openai_base_url is not None:
+        config.openai_base_url = args.openai_base_url
+    if args.ollama_base_url is not None:
+        config.ollama_base_url = args.ollama_base_url
+    if args.llm_proxy_url is not None:
+        config.llm_proxy_url = args.llm_proxy_url
+    if args.llm_skip_ssl_verify:
+        config.llm_skip_ssl_verify = True
+    if args.llm_observation_only:
+        config.llm_observation_only = True
 
     # 入力フォルダの存在チェック
     if "1" in args.steps or args.steps == "all":
@@ -98,6 +134,7 @@ def main(argv: list[str] | None = None) -> int:
         "パイプライン開始: run_id=%s, steps=%s, input=%s",
         config.run_id, args.steps, config.input_dir,
     )
+    logger.info("  llm_backend:  %s", config.llm_backend)
     logger.info("  intermediate: %s", config.intermediate_dir)
     logger.info("  output:       %s", config.output_dir)
 

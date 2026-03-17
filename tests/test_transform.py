@@ -9,6 +9,7 @@
   - 空行の整理
 """
 
+from src.llm.base import LLMBackend, ReconstructionUnit, TableInterpretationResult
 from src.models.intermediate import CellData, Confidence, IntermediateDocument
 from src.models.metadata import ExtractedFileRecord, FileMetadata
 from src.transform.to_markdown import transform_to_markdown
@@ -17,6 +18,132 @@ from src.transform.to_markdown import transform_to_markdown
 def _make_record(doc: IntermediateDocument) -> dict:
     meta = FileMetadata(source_path="test.docx", source_ext=".docx")
     return ExtractedFileRecord(metadata=meta, document=doc.to_dict()).to_dict()
+
+
+class _RenderPlanBackend(LLMBackend):
+    def generate(self, prompt: str, system: str = "") -> str:
+        return ""
+
+    def supports_table_interpretation(self) -> bool:
+        return True
+
+    def interpret_table(
+        self, unit: ReconstructionUnit, system: str = "",
+    ) -> TableInterpretationResult:
+        return TableInterpretationResult(
+            schema_version="1.0",
+            unit_id=unit.unit_id,
+            table_type="form",
+            render_strategy="form_grid",
+            render_plan={"row_roles": ["field_pairs"]},
+            self_assessment={"confidence": "medium"},
+        )
+
+
+class _SummaryLabelsBackend(LLMBackend):
+    def generate(self, prompt: str, system: str = "") -> str:
+        return ""
+
+    def supports_table_interpretation(self) -> bool:
+        return True
+
+    def interpret_table(
+        self, unit: ReconstructionUnit, system: str = "",
+    ) -> TableInterpretationResult:
+        previous = unit.context.get("previous_table", {})
+        previous_labels = previous.get("column_labels_by_col", [])
+        label_by_col = {
+            item.get("col"): item.get("label", "")
+            for item in previous_labels
+            if isinstance(item, dict)
+        }
+
+        bounds = unit.context.get("source_bounds", {})
+        base_col = bounds.get("col_start", 1)
+        first_row = unit.rows[0] if unit.rows else []
+        summary_labels: list[str] = []
+        for cell in first_row[1:]:
+            absolute_col = base_col + int(cell.get("col", 0))
+            label = label_by_col.get(absolute_col, "")
+            if label:
+                summary_labels.append(label)
+
+        return TableInterpretationResult(
+            schema_version="1.0",
+            unit_id=unit.unit_id,
+            table_type="data_table",
+            render_strategy="data_table",
+            render_plan={"summary_labels": summary_labels},
+            self_assessment={"confidence": "medium"},
+        )
+
+
+class _SummaryContextOnlyBackend(LLMBackend):
+    def generate(self, prompt: str, system: str = "") -> str:
+        return ""
+
+    def supports_table_interpretation(self) -> bool:
+        return True
+
+    def interpret_table(
+        self, unit: ReconstructionUnit, system: str = "",
+    ) -> TableInterpretationResult:
+        return TableInterpretationResult(
+            schema_version="1.0",
+            unit_id=unit.unit_id,
+            table_type="data_table",
+            render_strategy="data_table",
+            self_assessment={"confidence": "medium"},
+        )
+
+
+class _DataTablePlanBackend(LLMBackend):
+    def generate(self, prompt: str, system: str = "") -> str:
+        return ""
+
+    def supports_table_interpretation(self) -> bool:
+        return True
+
+    def interpret_table(
+        self, unit: ReconstructionUnit, system: str = "",
+    ) -> TableInterpretationResult:
+        row_roles = ["field_pairs", "", "", "field_pairs", "skip"]
+        return TableInterpretationResult(
+            schema_version="1.0",
+            unit_id=unit.unit_id,
+            table_type="data_table",
+            render_strategy="data_table",
+            header_rows=[1],
+            data_start_row=2,
+            render_plan={"row_roles": row_roles},
+            self_assessment={"confidence": "medium"},
+        )
+
+
+class _MarkdownLinesBackend(LLMBackend):
+    def generate(self, prompt: str, system: str = "") -> str:
+        return ""
+
+    def supports_table_interpretation(self) -> bool:
+        return True
+
+    def interpret_table(
+        self, unit: ReconstructionUnit, system: str = "",
+    ) -> TableInterpretationResult:
+        return TableInterpretationResult(
+            schema_version="1.0",
+            unit_id=unit.unit_id,
+            table_type="form",
+            render_strategy="form_grid",
+            render_plan={
+                "markdown_lines": [
+                    "チェック項目",
+                    "",
+                    "- □ 予算取得済み",
+                ],
+            },
+            self_assessment={"confidence": "medium"},
+        )
 
 
 class TestHeadingRendering:
@@ -299,8 +426,39 @@ class TestMergedCellRendering:
         )
 
         md = transform_to_markdown(_make_record(doc))
-        assert "**設備購入稟議書**" in md
-        assert "担当課長 | 部長 | 役員" in md
+        assert "設備購入稟議書 | 担当課長 | 部長 | 役員" in md
+        assert "設備購入稟議書: 担当課長" not in md
+
+    def test_approval_request_form_grid_regression(self):
+        """承認欄・フォーム行・チェック行が混在しても意味関係を崩さないこと"""
+        doc = IntermediateDocument()
+        doc.add_table(
+            rows=[
+                [
+                    CellData(text="設備購入稟議書", row=0, col=0, colspan=8, is_header=True),
+                    CellData(text="担当課長", row=0, col=8, colspan=2, is_header=True),
+                    CellData(text="部長", row=0, col=10, colspan=2, is_header=True),
+                    CellData(text="役員", row=0, col=12, colspan=2, is_header=True),
+                ],
+                [
+                    CellData(text="起案部署", row=1, col=0, colspan=3),
+                    CellData(text="情報システム部", row=1, col=3, colspan=3),
+                    CellData(text="起案者", row=1, col=6, colspan=3),
+                    CellData(text="鈴木 花子", row=1, col=9, colspan=4),
+                ],
+                [
+                    CellData(text="チェック項目", row=2, col=0, colspan=3),
+                    CellData(text="□ 予算取得済み", row=2, col=3, colspan=10),
+                ],
+            ],
+            has_merged_cells=True,
+        )
+
+        md = transform_to_markdown(_make_record(doc))
+        assert "設備購入稟議書 | 担当課長 | 部長 | 役員" in md
+        assert "起案部署: 情報システム部" in md
+        assert "起案者: 鈴木 花子" in md
+        assert "チェック項目: □ 予算取得済み" in md
         assert "設備購入稟議書: 担当課長" not in md
 
     def test_rowspan_header_calendar(self):
@@ -327,6 +485,289 @@ class TestMergedCellRendering:
         assert "氏名: 田中" in md
         assert "1/水: 出" in md
         assert "2/木: 休" in md
+
+    def test_summary_header_only_table(self):
+        """1行だけの集計表が重複ラベルなしで出力されること"""
+        doc = IntermediateDocument()
+        doc.add_table(
+            rows=[[
+                CellData(text="日別集計", row=0, col=0, colspan=3, is_header=True),
+                CellData(text="3", row=0, col=3, is_header=True),
+                CellData(text="4", row=0, col=4, is_header=True),
+                CellData(text="5", row=0, col=5, is_header=True),
+            ]],
+            has_merged_cells=True,
+        )
+
+        md = transform_to_markdown(_make_record(doc))
+        assert "日別集計: 3 | 4 | 5" in md
+        assert "日別集計 | 日別集計 | 日別集計" not in md
+
+    def test_sectioned_two_column_memo_table(self):
+        """部門別メモのような2列補足表は deterministic に KV 出力すること"""
+        doc = IntermediateDocument()
+        doc.add_table(
+            rows=[
+                [
+                    CellData(text="営業", row=0, col=0),
+                    CellData(text="売上データは案件単位で管理", row=0, col=1, colspan=5),
+                ],
+                [
+                    CellData(text="経理", row=1, col=0),
+                    CellData(text="入金区分ごとに消込運用が異なる", row=1, col=1, colspan=5),
+                ],
+                [
+                    CellData(text="運用", row=2, col=0),
+                    CellData(text="問い合わせ履歴は別システムとも二重管理", row=2, col=1, colspan=5),
+                ],
+            ],
+            has_merged_cells=True,
+        )
+
+        md = transform_to_markdown(_make_record(doc))
+        assert "営業: 売上データは案件単位で管理" in md
+        assert "経理: 入金区分ごとに消込運用が異なる" in md
+        assert "運用: 問い合わせ履歴は別システムとも二重管理" in md
+        assert "**営業 / 売上データは案件単位で管理**" not in md
+
+    def test_single_row_merged_field_pair_table(self):
+        """分離抽出された1行の merged field row が form_grid として描画されること"""
+        doc = IntermediateDocument()
+        doc.add_table(
+            rows=[[
+                CellData(text="件名", row=0, col=0, rowspan=2, colspan=3, is_header=True),
+                CellData(text="受注 CSV 取込レイアウト変更", row=0, col=3, rowspan=2, colspan=11, is_header=True),
+            ]],
+            has_merged_cells=True,
+        )
+
+        md = transform_to_markdown(_make_record(doc))
+        assert "件名: 受注 CSV 取込レイアウト変更" in md
+        assert "**件名 / 受注 CSV 取込レイアウト変更**" not in md
+
+    def test_two_row_merged_field_pairs_table(self):
+        """記入例のような2行の merged field row 群が form_grid で出ること"""
+        doc = IntermediateDocument()
+        doc.add_table(
+            rows=[
+                [
+                    CellData(text="項目", row=0, col=0, rowspan=2, colspan=2, is_header=True),
+                    CellData(text="値", row=0, col=2, rowspan=2, colspan=8, is_header=True),
+                ],
+                [
+                    CellData(text="画面名", row=2, col=0, rowspan=2, colspan=2),
+                    CellData(text="受注一括登録", row=2, col=2, rowspan=2, colspan=8),
+                ],
+            ],
+            has_merged_cells=True,
+        )
+
+        md = transform_to_markdown(_make_record(doc))
+        assert "項目: 値" in md
+        assert "画面名: 受注一括登録" in md
+        assert "**項目 / 値**" not in md
+
+    def test_llm_render_plan_can_override_form_grid_row_role(self):
+        """LLM の render_plan が form_grid の行描画方針へ反映されること"""
+        doc = IntermediateDocument()
+        doc.add_table(
+            rows=[[
+                CellData(text="件名", row=0, col=0, colspan=7, is_header=True),
+                CellData(text="受注 CSV 取込レイアウト変更", row=0, col=7, colspan=1, is_header=True),
+            ]],
+            has_merged_cells=True,
+        )
+
+        observations: list[dict] = []
+        md = transform_to_markdown(
+            _make_record(doc),
+            backend=_RenderPlanBackend(),
+            observation_records=observations,
+        )
+        assert "件名: 受注 CSV 取込レイアウト変更" in md
+        assert observations
+        assert observations[0]["decision"]["used_for_rendering"] is True
+
+    def test_llm_summary_labels_can_use_previous_table_context(self):
+        """LLM が直前テーブルの列ラベル文脈を使って集計行の出力方針を返せること"""
+        doc = IntermediateDocument()
+        doc.add_heading(2, "2026年04月勤怠", detection_method="sheet_name")
+        doc.add_table(
+            rows=[
+                [
+                    CellData(text="社員番号", row=0, col=0, rowspan=2, is_header=True),
+                    CellData(text="氏名", row=0, col=1, rowspan=2, is_header=True),
+                    CellData(text="所属", row=0, col=2, rowspan=2, is_header=True),
+                    CellData(text="1", row=0, col=3, is_header=True),
+                    CellData(text="2", row=0, col=4, is_header=True),
+                    CellData(text="3", row=0, col=5, is_header=True),
+                ],
+                [
+                    CellData(text="水", row=1, col=3),
+                    CellData(text="木", row=1, col=4),
+                    CellData(text="金", row=1, col=5),
+                ],
+                [
+                    CellData(text="E001", row=2, col=0),
+                    CellData(text="田中", row=2, col=1),
+                    CellData(text="営業1課", row=2, col=2),
+                    CellData(text="出", row=2, col=3),
+                    CellData(text="休", row=2, col=4),
+                    CellData(text="出", row=2, col=5),
+                ],
+            ],
+            has_merged_cells=True,
+            source_col_start=1,
+            source_col_end=6,
+        )
+        doc.add_table(
+            rows=[[
+                CellData(text="日別集計", row=0, col=0, colspan=3, is_header=True),
+                CellData(text="=COUNTIF(D5:D5,\"出\")", row=0, col=3, is_header=True),
+                CellData(text="=COUNTIF(E5:E5,\"出\")", row=0, col=4, is_header=True),
+                CellData(text="=COUNTIF(F5:F5,\"出\")", row=0, col=5, is_header=True),
+            ]],
+            has_merged_cells=True,
+            source_col_start=1,
+            source_col_end=6,
+        )
+
+        observations: list[dict] = []
+        md = transform_to_markdown(
+            _make_record(doc),
+            backend=_SummaryLabelsBackend(),
+            observation_records=observations,
+        )
+
+        assert "日別集計\n  1/水: =COUNTIF(D5:D5,\"出\")" in md
+        assert "  2/木: =COUNTIF(E5:E5,\"出\")" in md
+        assert "  3/金: =COUNTIF(F5:F5,\"出\")" in md
+        assert observations[-1]["decision"]["used_for_rendering"] is True
+
+    def test_llm_summary_can_fall_back_to_previous_table_context(self):
+        """LLM が summary_labels を省略しても直前テーブル文脈で補完できること"""
+        doc = IntermediateDocument()
+        doc.add_heading(2, "2026年04月勤怠", detection_method="sheet_name")
+        doc.add_table(
+            rows=[
+                [
+                    CellData(text="社員番号", row=0, col=0, rowspan=2, is_header=True),
+                    CellData(text="氏名", row=0, col=1, rowspan=2, is_header=True),
+                    CellData(text="所属", row=0, col=2, rowspan=2, is_header=True),
+                    CellData(text="1", row=0, col=3, is_header=True),
+                    CellData(text="2", row=0, col=4, is_header=True),
+                    CellData(text="3", row=0, col=5, is_header=True),
+                ],
+                [
+                    CellData(text="水", row=1, col=3),
+                    CellData(text="木", row=1, col=4),
+                    CellData(text="金", row=1, col=5),
+                ],
+                [
+                    CellData(text="E001", row=2, col=0),
+                    CellData(text="田中", row=2, col=1),
+                    CellData(text="営業1課", row=2, col=2),
+                    CellData(text="出", row=2, col=3),
+                    CellData(text="休", row=2, col=4),
+                    CellData(text="出", row=2, col=5),
+                ],
+            ],
+            has_merged_cells=True,
+            source_col_start=1,
+            source_col_end=6,
+        )
+        doc.add_table(
+            rows=[[
+                CellData(text="日別集計", row=0, col=0, colspan=3, is_header=True),
+                CellData(text="=COUNTIF(D5:D5,\"出\")", row=0, col=3, is_header=True),
+                CellData(text="=COUNTIF(E5:E5,\"出\")", row=0, col=4, is_header=True),
+                CellData(text="=COUNTIF(F5:F5,\"出\")", row=0, col=5, is_header=True),
+            ]],
+            has_merged_cells=True,
+            source_col_start=1,
+            source_col_end=6,
+        )
+
+        observations: list[dict] = []
+        md = transform_to_markdown(
+            _make_record(doc),
+            backend=_SummaryContextOnlyBackend(),
+            observation_records=observations,
+        )
+
+        assert "日別集計\n  1/水: =COUNTIF(D5:D5,\"出\")" in md
+        assert "  2/木: =COUNTIF(E5:E5,\"出\")" in md
+        assert "  3/金: =COUNTIF(F5:F5,\"出\")" in md
+        assert observations[-1]["decision"]["used_for_rendering"] is True
+
+    def test_llm_data_table_plan_can_change_preheader_and_mixed_rows(self):
+        """LLM の data_table render_plan が pre-header / mixed-row / skip へ反映されること"""
+        doc = IntermediateDocument()
+        doc.add_table(
+            rows=[
+                [
+                    CellData(text="請求先", row=0, col=0, colspan=2),
+                    CellData(text="株式会社サンプル", row=0, col=2, colspan=2),
+                ],
+                [
+                    CellData(text="品目", row=1, col=0, is_header=True),
+                    CellData(text="数量", row=1, col=1, is_header=True),
+                    CellData(text="単価", row=1, col=2, is_header=True),
+                    CellData(text="金額", row=1, col=3, is_header=True),
+                ],
+                [
+                    CellData(text="サーバ", row=2, col=0),
+                    CellData(text="2", row=2, col=1),
+                    CellData(text="500,000", row=2, col=2),
+                    CellData(text="1,000,000", row=2, col=3),
+                ],
+                [
+                    CellData(text="備考", row=3, col=0),
+                    CellData(text="保守込み", row=3, col=1, colspan=3),
+                ],
+                [
+                    CellData(text="社内メモ", row=4, col=0, colspan=4),
+                ],
+            ],
+            has_merged_cells=True,
+        )
+
+        observations: list[dict] = []
+        md = transform_to_markdown(
+            _make_record(doc),
+            backend=_DataTablePlanBackend(),
+            observation_records=observations,
+        )
+
+        assert "請求先: 株式会社サンプル" in md
+        assert "備考: 保守込み" in md
+        assert "社内メモ" not in md
+        assert "[行1]" in md
+        assert observations[-1]["decision"]["used_for_rendering"] is True
+
+    def test_llm_markdown_lines_can_replace_table_body(self):
+        """LLM の markdown_lines がテーブル本文として採用されること"""
+        doc = IntermediateDocument()
+        doc.add_table(
+            rows=[
+                [
+                    CellData(text="チェック項目", row=0, col=0, colspan=3, is_header=True),
+                    CellData(text="□ 予算取得済み", row=0, col=3, colspan=5, is_header=True),
+                ],
+            ],
+            has_merged_cells=True,
+        )
+
+        observations: list[dict] = []
+        md = transform_to_markdown(
+            _make_record(doc),
+            backend=_MarkdownLinesBackend(),
+            observation_records=observations,
+        )
+
+        assert "チェック項目" in md
+        assert "- □ 予算取得済み" in md
+        assert observations[-1]["decision"]["used_for_rendering"] is True
 
 
 class TestShapeRendering:

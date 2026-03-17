@@ -68,6 +68,10 @@ class TableElement:
     has_merged_cells: bool = False
     confidence: Confidence = Confidence.HIGH
     fallback_reason: str = ""  # TABLE_FALLBACK 時の理由
+    source_row_start: int | None = None
+    source_col_start: int | None = None
+    source_row_end: int | None = None
+    source_col_end: int | None = None
 
 
 @dataclass
@@ -143,12 +147,20 @@ class IntermediateDocument:
                   has_merged_cells: bool = False,
                   confidence: Confidence = Confidence.HIGH,
                   fallback_reason: str = "",
+                  source_row_start: int | None = None,
+                  source_col_start: int | None = None,
+                  source_row_end: int | None = None,
+                  source_col_end: int | None = None,
                   source_index: int = 0) -> None:
         self.elements.append(DocumentElement(
             type=ElementType.TABLE,
             content=TableElement(
                 rows=rows, caption=caption, has_merged_cells=has_merged_cells,
                 confidence=confidence, fallback_reason=fallback_reason,
+                source_row_start=source_row_start,
+                source_col_start=source_col_start,
+                source_row_end=source_row_end,
+                source_col_end=source_col_end,
             ),
             source_index=source_index,
         ))

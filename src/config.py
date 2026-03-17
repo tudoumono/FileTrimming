@@ -11,6 +11,10 @@ from datetime import datetime
 from pathlib import Path
 
 
+def _parse_bool_env(value: str) -> bool:
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 @dataclass
 class PipelineConfig:
     """パイプライン全体の設定"""
@@ -46,12 +50,20 @@ class PipelineConfig:
     def transformed_dir(self) -> Path:
         return self.intermediate_dir / "03_transformed"
 
+    @property
+    def review_dir(self) -> Path:
+        return self.intermediate_dir / "04_review"
+
     # --- LLM 設定 ---
     llm_backend: str = "noop"  # "noop", "openai", "local"
     openai_api_key: str = ""
+    openai_base_url: str = ""
     openai_model: str = "gpt-4o-mini"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "llama-3-elyza-8b"
+    llm_proxy_url: str = ""
+    llm_skip_ssl_verify: bool = False
+    llm_observation_only: bool = False
 
     # --- Step1: 正規化 ---
     # COM 変換対象の拡張子 (.doc/.rtf → Word COM → .docx, .xls → Excel COM → .xlsx)
@@ -103,9 +115,13 @@ class PipelineConfig:
 
         対応する環境変数:
           OPENAI_API_KEY    → openai_api_key
+          OPENAI_BASE_URL   → openai_base_url
           OPENAI_MODEL      → openai_model
           OLLAMA_BASE_URL   → ollama_base_url
           OLLAMA_MODEL      → ollama_model
+          LLM_PROXY_URL     → llm_proxy_url
+          LLM_SKIP_SSL_VERIFY → llm_skip_ssl_verify
+          LLM_OBSERVATION_ONLY → llm_observation_only
           LLM_BACKEND       → llm_backend
         """
         if env_path is None:
@@ -127,12 +143,23 @@ class PipelineConfig:
         # 環境変数から設定に反映（環境変数が優先）
         env_map = {
             "OPENAI_API_KEY": "openai_api_key",
+            "OPENAI_BASE_URL": "openai_base_url",
             "OPENAI_MODEL": "openai_model",
             "OLLAMA_BASE_URL": "ollama_base_url",
             "OLLAMA_MODEL": "ollama_model",
+            "LLM_PROXY_URL": "llm_proxy_url",
             "LLM_BACKEND": "llm_backend",
         }
         for env_key, attr in env_map.items():
             val = os.environ.get(env_key)
             if val:
                 setattr(self, attr, val)
+
+        bool_env_map = {
+            "LLM_SKIP_SSL_VERIFY": "llm_skip_ssl_verify",
+            "LLM_OBSERVATION_ONLY": "llm_observation_only",
+        }
+        for env_key, attr in bool_env_map.items():
+            val = os.environ.get(env_key)
+            if val:
+                setattr(self, attr, _parse_bool_env(val))

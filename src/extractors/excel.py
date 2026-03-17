@@ -426,12 +426,17 @@ def extract_xlsx(
                         )
 
                     confidence = Confidence.MEDIUM if has_merged else Confidence.HIGH
+                    min_r, min_c, max_r, max_c = bounds
                     intermediate.add_table(
                         rows=rows,
                         caption="",
                         has_merged_cells=has_merged,
                         confidence=confidence,
                         fallback_reason="",
+                        source_row_start=min_r,
+                        source_col_start=min_c,
+                        source_row_end=max_r,
+                        source_col_end=max_c,
                         source_index=source_idx,
                     )
                     source_idx += 1

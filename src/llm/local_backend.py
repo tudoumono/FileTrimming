@@ -8,7 +8,13 @@ from __future__ import annotations
 
 from logging import getLogger
 
-from src.llm.base import LLMBackend
+from src.llm.base import LLMBackend, ReconstructionUnit, TableInterpretationResult
+from src.llm.http_client import build_http_client
+from src.llm.table_interpretation import (
+    TABLE_INTERPRETATION_SYSTEM_PROMPT,
+    build_table_interpretation_prompt,
+    parse_table_interpretation_response,
+)
 
 logger = getLogger(__name__)
 
@@ -24,6 +30,8 @@ class LocalBackend(LLMBackend):
         self,
         base_url: str = "http://localhost:11434",
         model: str = "llama-3-elyza-8b",
+        proxy_url: str = "",
+        skip_ssl_verify: bool = False,
     ) -> None:
         try:
             from openai import OpenAI
@@ -34,12 +42,26 @@ class LocalBackend(LLMBackend):
             ) from e
 
         # Ollama の OpenAI 互換エンドポイント
-        self._client = OpenAI(
-            base_url=f"{base_url}/v1",
-            api_key="ollama",  # Ollama は API キー不要だがダミー値が必要
+        client_kwargs: dict[str, object] = {
+            "base_url": f"{base_url}/v1",
+            "api_key": "ollama",
+        }
+        http_client = build_http_client(
+            proxy_url=proxy_url,
+            skip_ssl_verify=skip_ssl_verify,
         )
+        if http_client is not None:
+            client_kwargs["http_client"] = http_client
+
+        self._client = OpenAI(**client_kwargs)
         self._model = model
-        logger.info("Ollama バックエンド初期化: base_url=%s, model=%s", base_url, model)
+        logger.info(
+            "Ollama バックエンド初期化: base_url=%s, model=%s, proxy=%s, skip_ssl_verify=%s",
+            base_url,
+            model,
+            proxy_url or "(none)",
+            skip_ssl_verify,
+        )
 
     def generate(self, prompt: str, system: str = "") -> str:
         messages = []
@@ -52,3 +74,16 @@ class LocalBackend(LLMBackend):
             messages=messages,
         )
         return response.choices[0].message.content or ""
+
+    def supports_table_interpretation(self) -> bool:
+        return True
+
+    def interpret_table(
+        self, unit: ReconstructionUnit, system: str = "",
+    ) -> TableInterpretationResult:
+        prompt = build_table_interpretation_prompt(unit)
+        response_text = self.generate(
+            prompt,
+            system=system or TABLE_INTERPRETATION_SYSTEM_PROMPT,
+        )
+        return parse_table_interpretation_response(response_text, unit.unit_id)
