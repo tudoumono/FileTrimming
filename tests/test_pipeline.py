@@ -240,6 +240,133 @@ class TestFolderProcessor:
         assert review["observation_only"] is False
         assert len(review["tables"]) == 1
 
+    def test_step3_parallel_workers_process_multiple_files(
+        self, monkeypatch: pytest.MonkeyPatch, config: PipelineConfig,
+    ):
+        """Step3 が複数ファイルを並列 worker で処理できること"""
+        config.llm_backend = "openai"
+        config.transform_workers = 2
+
+        sample_record_a = {
+            "metadata": {
+                "source_path": "sample_a.xlsx",
+                "source_ext": ".xlsx",
+                "doc_role_guess": "unknown",
+            },
+            "document": {
+                "elements": [
+                    {"type": "heading", "content": {
+                        "text": "申請書A", "level": 2, "detection_method": "sheet_name",
+                    }},
+                    {"type": "table", "content": {
+                        "rows": [
+                            [
+                                {"text": "項目", "row": 0, "col": 0, "is_header": True},
+                                {"text": "値", "row": 0, "col": 1, "is_header": True},
+                            ],
+                            [
+                                {"text": "件名", "row": 1, "col": 0},
+                                {"text": "サンプルA", "row": 1, "col": 1},
+                            ],
+                        ],
+                        "caption": "",
+                        "has_merged_cells": False,
+                        "confidence": "medium",
+                        "fallback_reason": "",
+                    }},
+                ],
+            },
+        }
+        sample_record_b = {
+            "metadata": {
+                "source_path": "sample_b.xlsx",
+                "source_ext": ".xlsx",
+                "doc_role_guess": "unknown",
+            },
+            "document": {
+                "elements": [
+                    {"type": "heading", "content": {
+                        "text": "申請書B", "level": 2, "detection_method": "sheet_name",
+                    }},
+                    {"type": "table", "content": {
+                        "rows": [
+                            [
+                                {"text": "項目", "row": 0, "col": 0, "is_header": True},
+                                {"text": "値", "row": 0, "col": 1, "is_header": True},
+                            ],
+                            [
+                                {"text": "件名", "row": 1, "col": 0},
+                                {"text": "サンプルB", "row": 1, "col": 1},
+                            ],
+                        ],
+                        "caption": "",
+                        "has_merged_cells": False,
+                        "confidence": "medium",
+                        "fallback_reason": "",
+                    }},
+                ],
+            },
+        }
+
+        for name, record in {
+            "sample_a.json": sample_record_a,
+            "sample_b.json": sample_record_b,
+        }.items():
+            json_path = config.extracted_dir / name
+            json_path.parent.mkdir(parents=True, exist_ok=True)
+            json_path.write_text(
+                json.dumps(record, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+
+        monkeypatch.setattr(
+            "src.pipeline.folder_processor.create_backend",
+            lambda _config: _FakeTableBackend(),
+        )
+
+        results = run_step3_transform(config)
+        ok_results = [
+            r for r in results
+            if r.step == "transform" and r.status == ProcessStatus.SUCCESS
+        ]
+        assert len(ok_results) == 2
+        assert (config.transformed_dir / "sample_a.md").exists()
+        assert (config.transformed_dir / "sample_b.md").exists()
+
+
+class TestConfigLoading:
+    def test_load_env_reads_worker_settings(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+    ):
+        """並列 worker 設定が .env から読み込まれること"""
+        for key in (
+            "NORMALIZE_WORKERS",
+            "EXTRACT_WORKERS",
+            "TRANSFORM_WORKERS",
+            "LLM_OBSERVATION_ONLY",
+        ):
+            monkeypatch.delenv(key, raising=False)
+
+        env_path = tmp_path / ".env"
+        env_path.write_text(
+            "\n".join([
+                "NORMALIZE_WORKERS=2",
+                "EXTRACT_WORKERS=3",
+                "TRANSFORM_WORKERS=4",
+                "LLM_OBSERVATION_ONLY=true",
+            ]),
+            encoding="utf-8",
+        )
+
+        config = PipelineConfig()
+        config.load_env(env_path)
+        config.validate()
+
+        assert config.normalize_workers == 2
+        assert config.extract_workers == 3
+        assert config.transform_workers == 4
+        assert config.llm_observation_only is True
+
 
 class TestSplitter:
     """15MB 分割テスト"""

@@ -15,6 +15,13 @@ def _parse_bool_env(value: str) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _parse_int_env(value: str, minimum: int = 1) -> int:
+    parsed = int(value.strip())
+    if parsed < minimum:
+        raise ValueError(f"value must be >= {minimum}: {parsed}")
+    return parsed
+
+
 @dataclass
 class PipelineConfig:
     """パイプライン全体の設定"""
@@ -24,6 +31,9 @@ class PipelineConfig:
     intermediate_base: Path = field(default_factory=lambda: Path("intermediate"))
     output_base: Path = field(default_factory=lambda: Path("output"))
     run_id: str = ""  # タイムスタンプ (例: "20260313_175250")。空なら自動生成
+    normalize_workers: int = 1
+    extract_workers: int = 1
+    transform_workers: int = 1
 
     def _ensure_run_id(self) -> str:
         if not self.run_id:
@@ -123,6 +133,9 @@ class PipelineConfig:
           LLM_SKIP_SSL_VERIFY → llm_skip_ssl_verify
           LLM_OBSERVATION_ONLY → llm_observation_only
           LLM_BACKEND       → llm_backend
+          NORMALIZE_WORKERS → normalize_workers
+          EXTRACT_WORKERS   → extract_workers
+          TRANSFORM_WORKERS → transform_workers
         """
         if env_path is None:
             env_path = Path(".env")
@@ -163,3 +176,24 @@ class PipelineConfig:
             val = os.environ.get(env_key)
             if val:
                 setattr(self, attr, _parse_bool_env(val))
+
+        int_env_map = {
+            "NORMALIZE_WORKERS": "normalize_workers",
+            "EXTRACT_WORKERS": "extract_workers",
+            "TRANSFORM_WORKERS": "transform_workers",
+        }
+        for env_key, attr in int_env_map.items():
+            val = os.environ.get(env_key)
+            if val:
+                setattr(self, attr, _parse_int_env(val))
+
+    def validate(self) -> None:
+        """設定値の整合性を検証する。"""
+        for attr in (
+            "normalize_workers",
+            "extract_workers",
+            "transform_workers",
+        ):
+            value = getattr(self, attr)
+            if value < 1:
+                raise ValueError(f"{attr} must be >= 1: {value}")

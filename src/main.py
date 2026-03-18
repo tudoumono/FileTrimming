@@ -58,6 +58,24 @@ def main(argv: list[str] | None = None) -> int:
         help="実行ID (default: 自動生成 YYYYMMDD_HHMMSS)。既存の実行を再開する場合に指定",
     )
     parser.add_argument(
+        "--normalize-workers",
+        type=int,
+        default=None,
+        help="Step1 の並列数 (.doc/.xls の COM 変換は 1 を推奨)",
+    )
+    parser.add_argument(
+        "--extract-workers",
+        type=int,
+        default=None,
+        help="Step2 の並列数 (文書抽出を並列化)",
+    )
+    parser.add_argument(
+        "--transform-workers",
+        type=int,
+        default=None,
+        help="Step3 の並列数 (LLM/Markdown 変換を並列化)",
+    )
+    parser.add_argument(
         "--steps", "-s",
         default="all",
         help="実行ステップ: all, 1, 2, 3, 1-2, 2-3, 1-3 (default: all)",
@@ -122,6 +140,13 @@ def main(argv: list[str] | None = None) -> int:
         config.llm_skip_ssl_verify = True
     if args.llm_observation_only:
         config.llm_observation_only = True
+    if args.normalize_workers is not None:
+        config.normalize_workers = args.normalize_workers
+    if args.extract_workers is not None:
+        config.extract_workers = args.extract_workers
+    if args.transform_workers is not None:
+        config.transform_workers = args.transform_workers
+    config.validate()
 
     # 入力フォルダの存在チェック
     if "1" in args.steps or args.steps == "all":
@@ -133,6 +158,12 @@ def main(argv: list[str] | None = None) -> int:
     logger.info(
         "パイプライン開始: run_id=%s, steps=%s, input=%s",
         config.run_id, args.steps, config.input_dir,
+    )
+    logger.info(
+        "  workers:      step1=%d, step2=%d, step3=%d",
+        config.normalize_workers,
+        config.extract_workers,
+        config.transform_workers,
     )
     logger.info("  llm_backend:  %s", config.llm_backend)
     logger.info("  intermediate: %s", config.intermediate_dir)
