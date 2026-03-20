@@ -69,6 +69,25 @@ class LLMBackend(ABC):
         """構造化テーブル解釈をサポートしているか。"""
         return False
 
+    def backend_name(self) -> str:
+        """レビュー成果物向けのバックエンド識別子を返す。"""
+        name = self.__class__.__name__
+        if name.endswith("Backend"):
+            name = name[:-7]
+        return name.lower()
+
+    def model_name(self) -> str:
+        """使用モデル名を返す。未使用時は空文字列。"""
+        return ""
+
+    def prompt_version(self) -> str:
+        """使用プロンプト版を返す。未使用時は空文字列。"""
+        return ""
+
+    def close(self) -> None:
+        """必要なら保持中のリソースを解放する。"""
+        return None
+
     def interpret_table(
         self, unit: ReconstructionUnit, system: str = "",
     ) -> TableInterpretationResult:

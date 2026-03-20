@@ -30,6 +30,15 @@ class _FakeTableBackend(LLMBackend):
     def supports_table_interpretation(self) -> bool:
         return True
 
+    def backend_name(self) -> str:
+        return "fake_openai"
+
+    def model_name(self) -> str:
+        return "fake-model"
+
+    def prompt_version(self) -> str:
+        return "test-prompt.v1"
+
     def interpret_table(
         self, unit: ReconstructionUnit, system: str = "",
     ) -> TableInterpretationResult:
@@ -237,6 +246,9 @@ class TestFolderProcessor:
         review_path = config.review_dir / "sample.llm_review.json"
         assert review_path.exists()
         review = json.loads(review_path.read_text(encoding="utf-8"))
+        assert review["llm_backend"] == "fake_openai"
+        assert review["model_name"] == "fake-model"
+        assert review["prompt_version"] == "test-prompt.v1"
         assert review["observation_only"] is False
         assert len(review["tables"]) == 1
 

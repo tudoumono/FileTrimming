@@ -32,6 +32,36 @@ ExpandedRow = list[tuple[str, int]]
 _LLM_MAX_CANDIDATE_ROWS = 200
 _LLM_MAX_CANDIDATE_TEXT_CELLS = 2000
 _CHECKBOX_PREFIXES = ("□", "■", "☑", "☐", "✓")
+
+# --- テーブル解釈の閾値（PipelineConfig から上書き可能） ---
+_FORM_LABEL_MAX_CHARS = 24
+_FORM_MAX_ROWS = 12
+_MEMO_LABEL_MAX_CHARS = 20
+_PARALLEL_LABEL_MAX_CHARS = 12
+_MARKDOWN_LINES_PER_ROW = 6
+
+
+def configure_table_thresholds(
+    *,
+    form_label_max_chars: int | None = None,
+    form_max_rows: int | None = None,
+    memo_label_max_chars: int | None = None,
+    parallel_label_max_chars: int | None = None,
+    markdown_lines_per_row: int | None = None,
+) -> None:
+    """PipelineConfig からテーブル解釈閾値を反映する。"""
+    global _FORM_LABEL_MAX_CHARS, _FORM_MAX_ROWS, _MEMO_LABEL_MAX_CHARS
+    global _PARALLEL_LABEL_MAX_CHARS, _MARKDOWN_LINES_PER_ROW
+    if form_label_max_chars is not None:
+        _FORM_LABEL_MAX_CHARS = form_label_max_chars
+    if form_max_rows is not None:
+        _FORM_MAX_ROWS = form_max_rows
+    if memo_label_max_chars is not None:
+        _MEMO_LABEL_MAX_CHARS = memo_label_max_chars
+    if parallel_label_max_chars is not None:
+        _PARALLEL_LABEL_MAX_CHARS = parallel_label_max_chars
+    if markdown_lines_per_row is not None:
+        _MARKDOWN_LINES_PER_ROW = markdown_lines_per_row
 _FORM_GRID_ROW_KINDS = {
     "parallel_labels",
     "field_pairs",
@@ -561,6 +591,106 @@ def _is_summary_header_only_table(analysis: _TableAnalysis) -> bool:
     )
 
 
+def _looks_like_two_column_key_value_candidate(
+    analysis: _TableAnalysis,
+    fallback: _TableInterpretation,
+    profile: _TableProfile,
+) -> bool:
+    """元々の 2 列 KV 誤判定問題に近い表を LLM 対象として拾う。"""
+    if analysis.total_cols != 2:
+        return False
+    if fallback.render_kind != "data_table":
+        return False
+    if not fallback.header_found or fallback.data_start <= 0:
+        return False
+    if profile.non_empty_row_count < 3 or profile.non_empty_row_count > 20:
+        return False
+
+    header_row = analysis.rows[fallback.data_start - 1]
+    if len(_text_cells(header_row)) != 2:
+        return False
+
+    data_rows = [row for row in analysis.rows[fallback.data_start:] if not _is_empty_row(row)]
+    if not data_rows:
+        return False
+
+    for row in data_rows:
+        positions = _expand_row_to_positions(row)
+        filled_positions = [
+            idx for idx, (text, cs) in enumerate(positions)
+            if text and cs > 0
+        ]
+        if len(filled_positions) == 0 or len(filled_positions) > 2:
+            return False
+        if len(_text_cells(row)) > 2:
+            return False
+
+    return True
+
+
+def _assess_rule_confidence(
+    analysis: _TableAnalysis,
+    fallback: _TableInterpretation,
+    profile: _TableProfile,
+) -> str:
+    """ルールベース解釈の確信度を評価する。
+
+    Returns:
+        "high", "medium", "low" のいずれか。
+        "low" の場合、LLM に回すことで精度向上が期待できる。
+    """
+    # トリビアルなテーブルはルールで十分
+    if profile.non_empty_row_count <= 1:
+        return "high"
+
+    reasons_for_low: list[str] = []
+
+    # ヘッダー判定が曖昧: data_table なのにヘッダーが見つからない
+    if fallback.render_kind == "data_table" and not fallback.header_found:
+        reasons_for_low.append("data_table_no_header")
+
+    # 結合セルが一部だけある（form でも data_table でもない中間状態）
+    if analysis.has_merged_cells and profile.text_cell_count > 0:
+        merged_ratio = profile.merged_text_cell_count / profile.text_cell_count
+        if 0.1 < merged_ratio < 0.5:
+            reasons_for_low.append("partial_merged_cells")
+
+    # 列数とデータ密度のミスマッチ: 広い表だが使用列が偏っている
+    if (
+        fallback.render_kind == "data_table"
+        and fallback.header_found
+        and analysis.total_cols >= 4
+        and fallback.active_cols
+    ):
+        active_ratio = len(fallback.active_cols) / analysis.total_cols
+        if active_ratio < 0.4:
+            reasons_for_low.append("sparse_active_columns")
+
+    # 混合パターン: form_field 行と data_record 行が混在
+    if fallback.render_kind == "data_table" and profile.non_empty_row_count >= 3:
+        form_like_rows = 0
+        for row in analysis.rows:
+            if _is_empty_row(row):
+                continue
+            if _is_form_field_row(row, analysis.total_cols):
+                form_like_rows += 1
+        if form_like_rows > 0 and form_like_rows < profile.non_empty_row_count:
+            reasons_for_low.append("mixed_form_and_data")
+
+    if reasons_for_low:
+        return "low"
+
+    # 中間的な確信度のケース
+    if (
+        fallback.render_kind == "data_table"
+        and fallback.header_found
+        and profile.non_empty_row_count <= 3
+    ):
+        return "medium"
+
+    return "high"
+
+
 def _should_request_llm_interpretation(
     analysis: _TableAnalysis,
     fallback: _TableInterpretation,
@@ -576,11 +706,21 @@ def _should_request_llm_interpretation(
         if has_previous_table_context:
             return True, "llm_requested: summary_header_table_candidate"
         return False, "fallback: summary_without_context"
+    if _looks_like_two_column_key_value_candidate(analysis, fallback, profile):
+        return True, "llm_requested: two_column_key_value_candidate"
     if fallback.render_kind not in {"data_table", "form_grid"}:
         return False, "fallback: existing_non_data_strategy"
     if not analysis.has_merged_cells:
+        # 結合セルがなくてもルールの確信度が低ければ LLM に回す
+        rule_confidence = _assess_rule_confidence(analysis, fallback, profile)
+        if rule_confidence == "low":
+            return True, "llm_requested: rule_low_confidence"
         return False, "fallback: no_merged_cells"
     if not _looks_like_small_merged_form(analysis, profile):
+        # 小さなフォームパターンに合わなくても確信度が低ければ LLM に回す
+        rule_confidence = _assess_rule_confidence(analysis, fallback, profile)
+        if rule_confidence == "low":
+            return True, "llm_requested: rule_low_confidence"
         return False, "fallback: pattern_not_target"
     return True, "llm_requested: small_merged_form_candidate"
 
@@ -590,7 +730,7 @@ def _looks_like_small_merged_form(
 ) -> bool:
     if analysis.total_cols < 4:
         return False
-    if profile.non_empty_row_count == 0 or profile.non_empty_row_count > 12:
+    if profile.non_empty_row_count == 0 or profile.non_empty_row_count > _FORM_MAX_ROWS:
         return False
     if profile.max_text_cells_per_row == 0 or profile.max_text_cells_per_row > 4:
         return False
@@ -639,7 +779,7 @@ def _sanitize_markdown_lines(
         return []
 
     cleaned: list[str] = []
-    max_lines = max(8, len(analysis.rows) * 6)
+    max_lines = max(8, len(analysis.rows) * _MARKDOWN_LINES_PER_ROW)
     for line in markdown_lines:
         if len(cleaned) >= max_lines:
             break
@@ -736,10 +876,25 @@ def _select_interpretation_with_llm(
         return fallback, "fallback: low_confidence"
 
     is_summary_candidate = _is_summary_header_only_table(analysis)
+    is_small_merged_candidate = _looks_like_small_merged_form(analysis, profile)
+    is_two_column_kv_candidate = _looks_like_two_column_key_value_candidate(
+        analysis,
+        fallback,
+        profile,
+    )
+    is_rule_low_confidence = (
+        _assess_rule_confidence(analysis, fallback, profile) == "low"
+    )
     llm_interpretation = _result_to_interpretation(result, analysis)
-    if not is_summary_candidate and not _looks_like_small_merged_form(analysis, profile):
+    if (
+        not is_summary_candidate
+        and not is_small_merged_candidate
+        and not is_two_column_kv_candidate
+        and not is_rule_low_confidence
+    ):
         return fallback, "fallback: pattern_not_target"
 
+    markdown_lines: list[str] = []
     if not is_summary_candidate:
         markdown_lines = _sanitize_markdown_lines(
             analysis,
@@ -848,14 +1003,19 @@ def _select_interpretation_with_llm(
         ), "llm_adopted: form_grid"
 
     if result.render_strategy == "key_value":
-        active_cols = _infer_key_value_active_cols(analysis)
+        active_cols = list(llm_interpretation.active_cols)
+        if len(active_cols) < 2:
+            active_cols = _infer_key_value_active_cols(analysis)
         if len(active_cols) < 2:
             return fallback, "fallback: key_value_columns_not_found"
+        data_start = llm_interpretation.data_start
+        if is_two_column_kv_candidate:
+            data_start = max(data_start, fallback.data_start)
         return _TableInterpretation(
             render_kind="key_value",
-            labels=[],
-            data_start=0,
-            header_found=False,
+            labels=llm_interpretation.labels,
+            data_start=data_start,
+            header_found=llm_interpretation.header_found,
             active_cols=active_cols,
             summary_labels=[],
             markdown_lines=markdown_lines,
@@ -955,7 +1115,10 @@ def _is_parallel_label_row(row: TableRow, total_cols: int) -> bool:
         return False
 
     # 交互のラベル-値ペアで出したい行よりも、短い見出しが横並びになる行を優先。
-    short_cell_count = sum(1 for cell in cells if len(cell.get("text", "").strip()) <= 12)
+    short_cell_count = sum(
+        1 for cell in cells
+        if len(cell.get("text", "").strip()) <= _PARALLEL_LABEL_MAX_CHARS
+    )
     return short_cell_count == len(cells)
 
 
@@ -1002,7 +1165,7 @@ def _is_two_cell_merged_field_row(row: TableRow, total_cols: int) -> bool:
         return False
     if label_span + value_span < total_cols * 0.7:
         return False
-    if len(label_text) > 24:
+    if len(label_text) > _FORM_LABEL_MAX_CHARS:
         return False
     return value_span > label_span
 
@@ -1399,12 +1562,12 @@ def _looks_like_key_value_memo_table(analysis: _TableAnalysis) -> bool:
             return False
         if value_span < max(2, analysis.total_cols - 1):
             return False
-        if len(label_text) > 20:
+        if len(label_text) > _MEMO_LABEL_MAX_CHARS:
             return False
 
         content_rows += 1
 
-    return 0 < content_rows <= 12
+    return 0 < content_rows <= _FORM_MAX_ROWS
 
 
 def _interpret_table_no_llm(analysis: _TableAnalysis) -> _TableInterpretation:
@@ -1473,6 +1636,28 @@ def _interpret_table(
         render_context.previous_table_context,
     )
     fallback_observation_result = _interpretation_to_result(unit.unit_id, fallback).to_dict()
+
+    # ルールベースの解釈結果を context に追加し、LLM の参考情報にする
+    enriched_context = dict(unit.context)
+    enriched_context["rule_based_interpretation"] = {
+        "render_kind": fallback.render_kind,
+        "header_found": fallback.header_found,
+        "data_start": fallback.data_start,
+        "labels": fallback.labels,
+        "active_cols": fallback.active_cols,
+    }
+    unit = ReconstructionUnit(
+        schema_version=unit.schema_version,
+        unit_id=unit.unit_id,
+        source_path=unit.source_path,
+        source_ext=unit.source_ext,
+        sheet_name=unit.sheet_name,
+        table_caption=unit.table_caption,
+        rows=unit.rows,
+        context=enriched_context,
+        hints=unit.hints,
+    )
+
     should_request_llm, skip_reason = _should_request_llm_interpretation(
         analysis,
         fallback,
@@ -2029,6 +2214,21 @@ def transform_file(
             "schema_version": "1.0",
             "source_json": str(json_path),
             "markdown_output": str(output_path),
+            "llm_backend": (
+                backend.backend_name()
+                if backend is not None and backend.supports_table_interpretation()
+                else ""
+            ),
+            "model_name": (
+                backend.model_name()
+                if backend is not None and backend.supports_table_interpretation()
+                else ""
+            ),
+            "prompt_version": (
+                backend.prompt_version()
+                if backend is not None and backend.supports_table_interpretation()
+                else ""
+            ),
             "observation_only": observation_only,
             "tables": observations,
         }

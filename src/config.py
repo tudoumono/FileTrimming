@@ -107,6 +107,18 @@ class PipelineConfig:
     # Dify のファイルサイズ上限 (bytes)
     max_file_size_bytes: int = 15 * 1024 * 1024  # 15MB
 
+    # --- Step3: テーブル解釈の閾値 ---
+    # フォーム行のラベル最大文字数（超えるとフォーム行と見なさない）
+    form_label_max_chars: int = 24
+    # フォーム型テーブルの最大行数
+    form_max_rows: int = 12
+    # KVメモ表のラベル最大文字数
+    memo_label_max_chars: int = 20
+    # parallel_labels 行のセルテキスト最大文字数
+    parallel_label_max_chars: int = 12
+    # LLM markdown_lines サニタイズ: 1行あたりの最大出力行数倍率
+    markdown_lines_per_row: int = 6
+
     # --- Word 系対象拡張子（全ステップ共通） ---
     word_exts: set[str] = field(
         default_factory=lambda: {".doc", ".docx", ".rtf"}

@@ -162,6 +162,11 @@ def _resolve_transform_backend(config: PipelineConfig) -> LLMBackend:
     cached_backend = getattr(_transform_backend_local, "backend", None)
 
     if cached_backend is None or cached_key != cache_key:
+        if cached_backend is not None:
+            try:
+                cached_backend.close()
+            except Exception:
+                logger.warning("既存 LLM バックエンドの close に失敗しました", exc_info=True)
         cached_backend = create_backend(config)
         _transform_backend_local.cache_key = cache_key
         _transform_backend_local.backend = cached_backend

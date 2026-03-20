@@ -146,6 +146,27 @@ class _MarkdownLinesBackend(LLMBackend):
         )
 
 
+class _TwoColumnKeyValueBackend(LLMBackend):
+    def generate(self, prompt: str, system: str = "") -> str:
+        return ""
+
+    def supports_table_interpretation(self) -> bool:
+        return True
+
+    def interpret_table(
+        self, unit: ReconstructionUnit, system: str = "",
+    ) -> TableInterpretationResult:
+        return TableInterpretationResult(
+            schema_version="1.0",
+            unit_id=unit.unit_id,
+            table_type="key_value",
+            render_strategy="key_value",
+            data_start_row=1,
+            active_columns=[0, 1],
+            self_assessment={"confidence": "medium"},
+        )
+
+
 class TestHeadingRendering:
     def test_heading_levels(self):
         """見出しの ## レベルが正しく出力されること"""
@@ -274,6 +295,32 @@ class TestTableRendering:
         md = transform_to_markdown(_make_record(doc))
         assert "A" in md
         assert "B" in md
+
+    def test_llm_can_rewrite_two_column_meta_header_table_as_key_value(self):
+        """2列のメタヘッダー付き KV 表も LLM 候補に含めて再構成できること"""
+        doc = IntermediateDocument()
+        doc.add_table(
+            rows=[
+                [CellData(text="項目", row=0, col=0, is_header=True),
+                 CellData(text="内容", row=0, col=1, is_header=True)],
+                [CellData(text="文書名", row=1, col=0),
+                 CellData(text="ドキュメント処理パイプライン詳細設計書", row=1, col=1)],
+                [CellData(text="アーキテクチャ", row=2, col=0),
+                 CellData(text="マイクロサービス", row=2, col=1)],
+            ],
+        )
+
+        observations: list[dict] = []
+        md = transform_to_markdown(
+            _make_record(doc),
+            backend=_TwoColumnKeyValueBackend(),
+            observation_records=observations,
+        )
+
+        assert "文書名: ドキュメント処理パイプライン詳細設計書" in md
+        assert "アーキテクチャ: マイクロサービス" in md
+        assert "項目: 文書名" not in md
+        assert observations[-1]["decision"]["used_for_rendering"] is True
 
 
 class TestMergedCellRendering:
